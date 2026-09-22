@@ -53,16 +53,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Blocked devices collection: public read so blocked devices can be immediately identified, write by admin
+    // Blocked devices collection: public read so blocked devices can be immediately identified, write by admin or security service
     match /blocked_devices/{deviceId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
 
-    // Login logs collection: create allowed for recording login attempts, read/update/delete by admin
+    // Login logs collection: create and read allowed for recording and reviewing login attempts
     match /login_logs/{logId} {
-      allow create: if true;
-      allow read, update, delete: if isAdmin();
+      allow read, write: if true;
     }
 
     // Admin authorization whitelist

@@ -7,84 +7,58 @@ import {
   query,
   orderBy,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
 import { AdsterraAd } from '../types';
 
 const LOCAL_ADS_KEY = 'app_adsterra_ads_storage_v2';
-const ADS_INITIALIZED_KEY = 'app_adsterra_ads_initialized_flag';
+const ADS_INITIALIZED_KEY = 'app_adsterra_ads_initialized_flag_v3';
 
-export const INITIAL_DEFAULT_ADS: AdsterraAd[] = [
-  {
-    id: 'ad_after_banner_sample',
-    title: 'Adsterra Top Banner (Responsive)',
-    format: 'Banner',
-    size: '320x50',
-    width: 320,
-    height: 50,
-    placement: 'after_banner',
-    deviceTarget: 'all',
-    active: true,
-    order: 1,
-    adCode: `<script type="text/javascript">
-  atOptions = {
-    'key' : 'da048a4a76479724f1d7d82a17f95446',
-    'format' : 'iframe',
-    'height' : 50,
-    'width' : 320,
-    'params' : {}
-  };
-</script>
-<script type="text/javascript" src="https://www.highrevenueformat.com/da048a4a76479724f1d7d82a17f95446/invoke.js"></script>`,
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'ad_after_4_products_sample',
-    title: 'Adsterra Mid-Grid Square (300x250)',
-    format: 'Banner',
-    size: '300x250',
-    width: 300,
-    height: 250,
-    placement: 'after_4_products',
-    deviceTarget: 'all',
-    active: true,
-    order: 2,
-    adCode: `<script type="text/javascript">
-  atOptions = {
-    'key' : 'da048a4a76479724f1d7d82a17f95446',
-    'format' : 'iframe',
-    'height' : 250,
-    'width' : 300,
-    'params' : {}
-  };
-</script>
-<script type="text/javascript" src="https://www.highrevenueformat.com/da048a4a76479724f1d7d82a17f95446/invoke.js"></script>`,
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'ad_before_footer_desktop',
-    title: 'Adsterra Footer Leaderboard (728x90)',
-    format: 'Banner',
-    size: '728x90',
-    width: 728,
-    height: 90,
-    placement: 'before_footer',
-    deviceTarget: 'desktop_only',
-    active: true,
-    order: 3,
-    adCode: `<script type="text/javascript">
-  atOptions = {
-    'key' : 'da048a4a76479724f1d7d82a17f95446',
-    'format' : 'iframe',
-    'height' : 90,
-    'width' : 728,
-    'params' : {}
-  };
-</script>
-<script type="text/javascript" src="https://www.highrevenueformat.com/da048a4a76479724f1d7d82a17f95446/invoke.js"></script>`,
-    createdAt: new Date().toISOString(),
-  },
-];
+export const INITIAL_DEFAULT_ADS: AdsterraAd[] = [];
+
+// Clean up any legacy sample/demo ads from localStorage and Firestore
+export async function purgeDemoAds(): Promise<void> {
+  try {
+    const raw = localStorage.getItem(LOCAL_ADS_KEY);
+    if (raw) {
+      const parsed: AdsterraAd[] = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const cleaned = parsed.filter(
+          (a) =>
+            a &&
+            a.id &&
+            !a.id.includes('sample') &&
+            !a.id.startsWith('ad_after_banner_') &&
+            !a.id.startsWith('ad_after_4_') &&
+            !a.id.startsWith('ad_before_footer_')
+        );
+        if (cleaned.length !== parsed.length) {
+          localStorage.setItem(LOCAL_ADS_KEY, JSON.stringify(cleaned));
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  const firestore = db;
+  if (isFirebaseConfigured && firestore) {
+    try {
+      const demoAdIds = ['ad_after_banner_sample', 'ad_after_4_products_sample', 'ad_before_footer_desktop'];
+      const batch = writeBatch(firestore);
+      demoAdIds.forEach((id) => {
+        batch.delete(doc(firestore, 'ads', id));
+      });
+      await batch.commit().catch(() => {});
+    } catch {
+      // ignore
+    }
+  }
+}
+
+// Automatically trigger purge in background
+purgeDemoAds().catch(() => {});
 
 export function getLocalAds(): AdsterraAd[] {
   try {
@@ -92,17 +66,17 @@ export function getLocalAds(): AdsterraAd[] {
     if (raw !== null) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return parsed;
+        return parsed.filter(
+          (a) =>
+            a &&
+            a.id &&
+            !a.id.includes('sample') &&
+            !a.id.startsWith('ad_after_banner_') &&
+            !a.id.startsWith('ad_after_4_') &&
+            !a.id.startsWith('ad_before_footer_')
+        );
       }
     }
-
-    const isInitialized = localStorage.getItem(ADS_INITIALIZED_KEY);
-    if (!isInitialized) {
-      localStorage.setItem(ADS_INITIALIZED_KEY, 'true');
-      localStorage.setItem(LOCAL_ADS_KEY, JSON.stringify(INITIAL_DEFAULT_ADS));
-      return INITIAL_DEFAULT_ADS;
-    }
-
     return [];
   } catch {
     return [];
@@ -111,7 +85,16 @@ export function getLocalAds(): AdsterraAd[] {
 
 export function saveLocalAds(ads: AdsterraAd[]) {
   try {
-    localStorage.setItem(LOCAL_ADS_KEY, JSON.stringify(ads));
+    const cleanList = (ads || []).filter(
+      (a) =>
+        a &&
+        a.id &&
+        !a.id.includes('sample') &&
+        !a.id.startsWith('ad_after_banner_') &&
+        !a.id.startsWith('ad_after_4_') &&
+        !a.id.startsWith('ad_before_footer_')
+    );
+    localStorage.setItem(LOCAL_ADS_KEY, JSON.stringify(cleanList));
     localStorage.setItem(ADS_INITIALIZED_KEY, 'true');
     window.dispatchEvent(new CustomEvent('app_adsterra_ads_updated'));
   } catch {
@@ -166,7 +149,7 @@ export async function deleteAd(adId: string): Promise<void> {
 
   // 2. Delete on backend server so it never comes back from any device
   try {
-    fetch('/api/ads/delete', {
+    await fetch('/api/ads/delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: adId }),
@@ -226,9 +209,18 @@ export function subscribeToAds(callback: (ads: AdsterraAd[]) => void): () => voi
       const res = await fetch('/api/ads');
       if (res.ok) {
         const data = await res.json();
-        if (data.ads && Array.isArray(data.ads)) {
-          saveLocalAds(data.ads);
-          callback(data.ads);
+        if (data && Array.isArray(data.ads)) {
+          const validAds = data.ads.filter(
+            (a: AdsterraAd) =>
+              a &&
+              a.id &&
+              !a.id.includes('sample') &&
+              !a.id.startsWith('ad_after_banner_') &&
+              !a.id.startsWith('ad_after_4_') &&
+              !a.id.startsWith('ad_before_footer_')
+          );
+          saveLocalAds(validAds);
+          callback(validAds);
         }
       }
     } catch {
@@ -250,12 +242,22 @@ export function subscribeToAds(callback: (ads: AdsterraAd[]) => void): () => voi
         (snapshot) => {
           const list: AdsterraAd[] = [];
           snapshot.forEach((docSnap) => {
-            list.push(docSnap.data() as AdsterraAd);
+            const item = docSnap.data() as AdsterraAd;
+            if (
+              item &&
+              item.id &&
+              !item.id.includes('sample') &&
+              !item.id.startsWith('ad_after_banner_') &&
+              !item.id.startsWith('ad_after_4_') &&
+              !item.id.startsWith('ad_before_footer_')
+            ) {
+              list.push(item);
+            }
           });
-          if (list.length > 0) {
-            saveLocalAds(list);
-            callback(list);
-          }
+          // CRITICAL: Always update local state and notify callback,
+          // even if list is empty (0 ads remaining after deletion)!
+          saveLocalAds(list);
+          callback(list);
         },
         (err) => {
           console.warn('Firestore ads subscription warning:', err);

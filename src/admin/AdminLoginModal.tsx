@@ -28,40 +28,55 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
     setErrorMessage(null);
     setLoading(true);
 
+    const inputEmail = email.trim();
+
+    // Get device info safely
+    let deviceInfo;
     try {
-      const deviceInfo = await getCurrentDeviceInfo();
-      try {
-        await login(email, password);
-        // Record successful login
-        recordLoginAttempt({
-          email: email.trim(),
-          status: 'success',
-          device: deviceInfo,
-        }).catch(() => {});
+      deviceInfo = await getCurrentDeviceInfo();
+    } catch {
+      deviceInfo = {
+        deviceId: 'dev_fallback',
+        ip: '127.0.0.1',
+        browser: 'Browser',
+        os: 'OS',
+        deviceType: 'Desktop' as const,
+        userAgent: navigator.userAgent || '',
+      };
+    }
 
-        setLoading(false);
-        onSuccess();
-        onClose();
-      } catch (authErr: unknown) {
-        const failureReason =
-          authErr instanceof Error
-            ? authErr.message
-            : 'Wrong password or authentication failed / ভুল পাসওয়ার্ড';
+    try {
+      await login(inputEmail, password);
 
-        // Record failed attempt (wrong password or not found)
-        recordLoginAttempt({
-          email: email.trim(),
-          status: 'failed',
-          reason: failureReason,
-          device: deviceInfo,
-        }).catch(() => {});
+      // Record successful login
+      await recordLoginAttempt({
+        email: inputEmail,
+        status: 'success',
+        device: deviceInfo,
+      }).catch((err) => console.warn('Record login error:', err));
 
-        throw authErr;
-      }
-    } catch (err: unknown) {
+      setLoading(false);
+      onSuccess();
+      onClose();
+    } catch (authErr: unknown) {
+      const failureReason =
+        authErr instanceof Error
+          ? authErr.message
+          : 'Wrong password or authentication failed / ভুল পাসওয়ার্ড';
+
+      // Always record failed attempt immediately
+      await recordLoginAttempt({
+        email: inputEmail || 'unknown@user.com',
+        status: 'failed',
+        reason: failureReason,
+        device: deviceInfo,
+      }).catch((err) => console.warn('Record login failure error:', err));
+
       setLoading(false);
       setErrorMessage(
-        err instanceof Error ? err.message : 'Authentication failed. Please check your credentials.'
+        authErr instanceof Error
+          ? authErr.message
+          : 'Authentication failed. Please check your credentials.'
       );
     }
   };

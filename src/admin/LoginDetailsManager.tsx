@@ -29,6 +29,7 @@ import {
   unblockDevice,
   getLocalLoginLogs,
   saveLocalLoginLogs,
+  clearAllLoginLogs,
 } from '../lib/securityService';
 import { getCurrentDeviceInfo } from '../lib/deviceFingerprint';
 
@@ -39,6 +40,7 @@ export const LoginDetailsManager: React.FC = () => {
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'failed' | 'success' | 'blocked'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Modal for blocking a device with custom reason
   const [blockingTarget, setBlockingTarget] = useState<LoginLog | null>(null);
@@ -116,6 +118,25 @@ export const LoginDetailsManager: React.FC = () => {
     return result;
   }, [logs, selectedFilter, searchQuery]);
 
+  // Handle manual refresh
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      const res = await fetch('/api/security/logs');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.logs && Array.isArray(data.logs)) {
+          setLogs(data.logs);
+          saveLocalLoginLogs(data.logs);
+        }
+      }
+    } catch {
+      // ignore
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 500);
+    }
+  };
+
   // Handle blocking confirmation
   const handleConfirmBlock = async () => {
     if (!blockingTarget) return;
@@ -169,9 +190,9 @@ export const LoginDetailsManager: React.FC = () => {
   };
 
   // Clear all logs
-  const handleClearLogs = () => {
+  const handleClearLogs = async () => {
     if (confirm('আপনি কি সকল লগইন হিস্টোরি ক্লিয়ার করতে চান?')) {
-      saveLocalLoginLogs([]);
+      await clearAllLoginLogs();
       setLogs([]);
     }
   };
@@ -204,6 +225,17 @@ export const LoginDetailsManager: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={handleManualRefresh}
+            disabled={isRefreshing}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-neutral-50 hover:bg-neutral-100 text-neutral-700 border border-neutral-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+            title="লগইন তথ্য রিফ্রেশ করুন"
+          >
+            <RefreshCw size={13} className={isRefreshing ? 'animate-spin text-amber-600' : ''} />
+            <span>{isRefreshing ? 'রিফ্রেশ হচ্ছে...' : 'রিফ্রেশ'}</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setIsManualBlockModalOpen(true)}
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
           >
@@ -216,7 +248,7 @@ export const LoginDetailsManager: React.FC = () => {
               type="button"
               onClick={handleClearLogs}
               title="সকল লগ হিস্টোরি মুছে ফেলুন"
-              className="p-2 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors"
+              className="p-2 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
             >
               <Trash2 size={16} />
             </button>

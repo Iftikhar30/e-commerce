@@ -7,68 +7,36 @@ import {
   query,
   orderBy,
   limit,
+  writeBatch,
+  getDocs,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
 import { LoginLog, BlockedDevice } from '../types';
 
-const LOCAL_LOGIN_LOGS_KEY = 'app_security_login_logs';
-const LOCAL_BLOCKED_DEVICES_KEY = 'app_security_blocked_devices';
+const LOCAL_LOGIN_LOGS_KEY = 'app_security_login_logs_v2';
+const LOCAL_BLOCKED_DEVICES_KEY = 'app_security_blocked_devices_v2';
 
-const DEFAULT_SAMPLE_LOGS: LoginLog[] = [
-  {
-    id: 'log_sample_success',
-    email: 'ifti30ahmed@gmail.com',
-    status: 'success',
-    device: {
-      deviceId: 'dev_admin_desktop',
-      ip: '103.145.22.4',
-      browser: 'Google Chrome',
-      os: 'Windows 11',
-      deviceType: 'Desktop',
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/128.0',
-      city: 'Dhaka',
-      country: 'Bangladesh',
-    },
-    timestamp: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
-  },
-  {
-    id: 'log_sample_failed',
-    email: 'guest_user@mail.com',
-    status: 'failed',
-    reason: 'Incorrect email or password / ভুল পাসওয়ার্ড',
-    device: {
-      deviceId: 'dev_suspicious_77a',
-      ip: '185.220.101.5',
-      browser: 'Mozilla Firefox',
-      os: 'Linux',
-      deviceType: 'Desktop',
-      userAgent: 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0',
-      city: 'Frankfurt',
-      country: 'Germany',
-    },
-    timestamp: new Date(Date.now() - 1000 * 60 * 85).toISOString(),
-  },
-];
-
-// Helper to get local data
+// Helper to get local logs
 export function getLocalLoginLogs(): LoginLog[] {
   try {
     const raw = localStorage.getItem(LOCAL_LOGIN_LOGS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+      if (Array.isArray(parsed)) {
+        return parsed.filter((l) => l && l.id && !l.id.includes('sample'));
       }
     }
-    return DEFAULT_SAMPLE_LOGS;
+    return [];
   } catch {
-    return DEFAULT_SAMPLE_LOGS;
+    return [];
   }
 }
 
 export function saveLocalLoginLogs(logs: LoginLog[]) {
   try {
-    localStorage.setItem(LOCAL_LOGIN_LOGS_KEY, JSON.stringify(logs.slice(0, 200)));
+    const filtered = (logs || []).filter((l) => l && l.id && !l.id.includes('sample'));
+    localStorage.setItem(LOCAL_LOGIN_LOGS_KEY, JSON.stringify(filtered.slice(0, 300)));
+    window.dispatchEvent(new CustomEvent('app_security_login_logs_update'));
   } catch {
     // ignore
   }
@@ -85,7 +53,8 @@ export function getLocalBlockedDevices(): BlockedDevice[] {
 
 export function saveLocalBlockedDevices(devices: BlockedDevice[]) {
   try {
-    localStorage.setItem(LOCAL_BLOCKED_DEVICES_KEY, JSON.stringify(devices));
+    localStorage.setItem(LOCAL_BLOCKED_DEVICES_KEY, JSON.stringify(devices || []));
+    window.dispatchEvent(new CustomEvent('app_security_blocked_update'));
   } catch {
     // ignore
   }
@@ -101,19 +70,29 @@ export async function recordLoginAttempt(data: {
   const id = `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const newLog: LoginLog = {
     id,
-    email: data.email,
+    email: (data.email || 'unknown').trim(),
     status: data.status,
     reason: data.reason,
-    device: data.device,
+    device: {
+      deviceId: data.device?.deviceId || `dev_${Date.now()}`,
+      ip: data.device?.ip || '127.0.0.1',
+      browser: data.device?.browser || 'Browser',
+      os: data.device?.os || 'OS',
+      deviceType: data.device?.deviceType || 'Desktop',
+      userAgent: data.device?.userAgent || (typeof navigator !== 'undefined' ? navigator.userAgent : ''),
+      city: data.device?.city,
+      country: data.device?.country,
+      screenResolution: data.device?.screenResolution,
+    },
     timestamp: new Date().toISOString(),
   };
 
-  // 1. Save locally immediately
-  const localLogs = getLocalLoginLogs();
-  localLogs.unshift(newLog);
-  saveLocalLoginLogs(localLogs);
+  // 1. Save locally immediately & dispatch event
+  const currentLogs = getLocalLoginLogs().filter((l) => l.id !== newLog.id);
+  currentLogs.unshift(newLog);
+  saveLocalLoginLogs(currentLogs);
 
-  // 2. Sync to Backend Server API for cross-device persistence
+  // 2. Sync to Backend Server API for universal cross-device persistence
   try {
     fetch('/api/security/record-login', {
       method: 'POST',
@@ -124,11 +103,11 @@ export async function recordLoginAttempt(data: {
     // ignore
   }
 
-  // 3. Save to Firestore if available
+  // 3. Save to Firestore if configured
   if (isFirebaseConfigured && db) {
     try {
       const logRef = doc(db, 'login_logs', id);
-      await setDoc(logRef, newLog);
+      await setDoc(logRef, newLog).catch(() => {});
     } catch (err) {
       console.warn('Firestore recordLoginAttempt warning:', err);
     }
@@ -145,11 +124,11 @@ export async function blockDevice(device: BlockedDevice): Promise<void> {
   );
   localList.unshift(device);
 
-  // If device has an IP, also add an IP block entry so other browsers on the same device/network are blocked
+  // If device has an IP, also add an IP block entry
   if (device.ip && device.ip !== 'Unknown IP' && device.ip !== '127.0.0.1') {
     const ipEntry: BlockedDevice = {
       ...device,
-      id: `ip_${device.ip}`,
+      id: `ip_${device.ip.replace(/[^a-zA-Z0-9]/g, '_')}`,
       deviceId: device.deviceId,
     };
     if (!localList.some((b) => b.id === ipEntry.id)) {
@@ -159,10 +138,7 @@ export async function blockDevice(device: BlockedDevice): Promise<void> {
 
   saveLocalBlockedDevices(localList);
 
-  // Dispatch custom event for immediate same-tab reactive update
-  window.dispatchEvent(new CustomEvent('app_security_blocked_update'));
-
-  // 2. Sync to Backend Server API for universal cross-device enforcement
+  // 2. Sync to Backend Server API
   try {
     fetch('/api/security/block', {
       method: 'POST',
@@ -190,14 +166,10 @@ export async function blockDevice(device: BlockedDevice): Promise<void> {
 
 // Unblock a device
 export async function unblockDevice(deviceIdOrIp: string): Promise<void> {
-  // Update local cache
   const localList = getLocalBlockedDevices().filter(
     (b) => b.id !== deviceIdOrIp && b.deviceId !== deviceIdOrIp && b.ip !== deviceIdOrIp
   );
   saveLocalBlockedDevices(localList);
-
-  // Dispatch custom event
-  window.dispatchEvent(new CustomEvent('app_security_blocked_update'));
 
   // Sync to Backend Server
   try {
@@ -221,14 +193,38 @@ export async function unblockDevice(deviceIdOrIp: string): Promise<void> {
   }
 }
 
+// Clear all login logs
+export async function clearAllLoginLogs(): Promise<void> {
+  saveLocalLoginLogs([]);
+
+  try {
+    await fetch('/api/security/clear-logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch {
+    // ignore
+  }
+
+  if (isFirebaseConfigured && db) {
+    try {
+      const colRef = collection(db, 'login_logs');
+      const snap = await getDocs(colRef);
+      const batch = writeBatch(db);
+      snap.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    } catch (err) {
+      console.warn('Firestore clear logs warning:', err);
+    }
+  }
+}
+
 // Real-time subscription to blocked devices list
 export function subscribeToBlockedDevices(
   callback: (devices: BlockedDevice[]) => void
 ): () => void {
-  // Initial fire from local
   callback(getLocalBlockedDevices());
 
-  // Fetch from server backend API
   const fetchServerBlocked = async () => {
     try {
       const res = await fetch('/api/security/blocked');
@@ -271,8 +267,7 @@ export function subscribeToBlockedDevices(
             callback(getLocalBlockedDevices());
           }
         },
-        (err) => {
-          console.warn('Blocked devices subscription warning:', err);
+        () => {
           callback(getLocalBlockedDevices());
         }
       );
@@ -281,15 +276,13 @@ export function subscribeToBlockedDevices(
     }
   }
 
-  // Also listen for cross-tab or local custom events
   const handleLocalChange = () => {
     callback(getLocalBlockedDevices());
   };
   window.addEventListener('storage', handleLocalChange);
   window.addEventListener('app_security_blocked_update', handleLocalChange);
 
-  // Interval check every 5s for cross-device polling
-  const intervalId = setInterval(fetchServerBlocked, 5000);
+  const intervalId = setInterval(fetchServerBlocked, 4000);
 
   return () => {
     if (unsubscribeFirestore) unsubscribeFirestore();
@@ -303,36 +296,81 @@ export function subscribeToBlockedDevices(
 export function subscribeToLoginLogs(
   callback: (logs: LoginLog[]) => void
 ): () => void {
-  // Initial fire from local
   callback(getLocalLoginLogs());
+
+  // Function to fetch from server API
+  const fetchServerLogs = async () => {
+    try {
+      const res = await fetch('/api/security/logs');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.logs && Array.isArray(data.logs)) {
+          const serverLogs: LoginLog[] = data.logs.filter((l: LoginLog) => l && l.id && !l.id.includes('sample'));
+          const local = getLocalLoginLogs();
+          const combinedMap = new Map<string, LoginLog>();
+          
+          serverLogs.forEach((l) => combinedMap.set(l.id, l));
+          local.forEach((l) => {
+            if (!combinedMap.has(l.id)) {
+              combinedMap.set(l.id, l);
+            }
+          });
+
+          const sorted = Array.from(combinedMap.values()).sort(
+            (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          );
+
+          saveLocalLoginLogs(sorted);
+          callback(sorted);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  fetchServerLogs();
 
   let unsubscribeFirestore: (() => void) | null = null;
 
   if (isFirebaseConfigured && db) {
     try {
       const colRef = collection(db, 'login_logs');
-      const q = query(colRef, orderBy('timestamp', 'desc'), limit(150));
+      const q = query(colRef, orderBy('timestamp', 'desc'), limit(200));
       unsubscribeFirestore = onSnapshot(
         q,
         (snapshot) => {
           const list: LoginLog[] = [];
-          snapshot.forEach((doc) => {
-            list.push(doc.data() as LoginLog);
+          snapshot.forEach((docSnap) => {
+            const item = docSnap.data() as LoginLog;
+            if (item && item.id && !item.id.includes('sample')) {
+              list.push(item);
+            }
           });
-          if (list.length > 0) {
-            saveLocalLoginLogs(list);
-            callback(list);
-          } else {
-            callback(getLocalLoginLogs());
-          }
+          
+          const local = getLocalLoginLogs();
+          const combinedMap = new Map<string, LoginLog>();
+          list.forEach((l) => combinedMap.set(l.id, l));
+          local.forEach((l) => {
+            if (!combinedMap.has(l.id)) {
+              combinedMap.set(l.id, l);
+            }
+          });
+
+          const sorted = Array.from(combinedMap.values()).sort(
+            (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          );
+
+          saveLocalLoginLogs(sorted);
+          callback(sorted);
         },
         (err) => {
-          console.warn('Login logs subscription warning:', err);
-          callback(getLocalLoginLogs());
+          console.warn('Login logs Firestore warning:', err);
+          fetchServerLogs();
         }
       );
     } catch {
-      callback(getLocalLoginLogs());
+      fetchServerLogs();
     }
   }
 
@@ -340,10 +378,16 @@ export function subscribeToLoginLogs(
     callback(getLocalLoginLogs());
   };
   window.addEventListener('storage', handleLocalChange);
+  window.addEventListener('app_security_login_logs_update', handleLocalChange);
+
+  // Poll server every 4 seconds for cross-device updates
+  const intervalId = setInterval(fetchServerLogs, 4000);
 
   return () => {
     if (unsubscribeFirestore) unsubscribeFirestore();
     window.removeEventListener('storage', handleLocalChange);
+    window.removeEventListener('app_security_login_logs_update', handleLocalChange);
+    clearInterval(intervalId);
   };
 }
 

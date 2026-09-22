@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
@@ -506,77 +507,36 @@ Return strictly JSON matching:
     updatedAt?: string;
   }
 
-  let globalAds: ServerAdsterraAd[] = [
-    {
-      id: 'ad_after_banner_sample',
-      title: 'Adsterra Top Banner (Responsive)',
-      format: 'Banner',
-      size: '320x50',
-      width: 320,
-      height: 50,
-      placement: 'after_banner',
-      deviceTarget: 'all',
-      active: true,
-      order: 1,
-      adCode: `<script type="text/javascript">
-  atOptions = {
-    'key' : 'da048a4a76479724f1d7d82a17f95446',
-    'format' : 'iframe',
-    'height' : 50,
-    'width' : 320,
-    'params' : {}
-  };
-</script>
-<script type="text/javascript" src="https://www.highrevenueformat.com/da048a4a76479724f1d7d82a17f95446/invoke.js"></script>`,
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: 'ad_after_4_products_sample',
-      title: 'Adsterra Mid-Grid Square (300x250)',
-      format: 'Banner',
-      size: '300x250',
-      width: 300,
-      height: 250,
-      placement: 'after_4_products',
-      deviceTarget: 'all',
-      active: true,
-      order: 2,
-      adCode: `<script type="text/javascript">
-  atOptions = {
-    'key' : 'da048a4a76479724f1d7d82a17f95446',
-    'format' : 'iframe',
-    'height' : 250,
-    'width' : 300,
-    'params' : {}
-  };
-</script>
-<script type="text/javascript" src="https://www.highrevenueformat.com/da048a4a76479724f1d7d82a17f95446/invoke.js"></script>`,
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: 'ad_before_footer_desktop',
-      title: 'Adsterra Footer Leaderboard (728x90)',
-      format: 'Banner',
-      size: '728x90',
-      width: 728,
-      height: 90,
-      placement: 'before_footer',
-      deviceTarget: 'desktop_only',
-      active: true,
-      order: 3,
-      adCode: `<script type="text/javascript">
-  atOptions = {
-    'key' : 'da048a4a76479724f1d7d82a17f95446',
-    'format' : 'iframe',
-    'height' : 90,
-    'width' : 728,
-    'params' : {}
-  };
-</script>
-<script type="text/javascript" src="https://www.highrevenueformat.com/da048a4a76479724f1d7d82a17f95446/invoke.js"></script>`,
-      createdAt: new Date().toISOString(),
-    },
-  ];
+  const ADS_STORAGE_FILE = path.join(process.cwd(), 'data', 'ads.json');
+
+  function loadServerAds(): ServerAdsterraAd[] {
+    try {
+      if (fs.existsSync(ADS_STORAGE_FILE)) {
+        const raw = fs.readFileSync(ADS_STORAGE_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((a) => a && a.id && !a.id.includes('sample'));
+        }
+      }
+    } catch (e) {
+      console.warn('Error reading ads storage file:', e);
+    }
+    return [];
+  }
+
+  function saveServerAds(adsList: ServerAdsterraAd[]) {
+    try {
+      const dir = path.dirname(ADS_STORAGE_FILE);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(ADS_STORAGE_FILE, JSON.stringify(adsList, null, 2), 'utf-8');
+    } catch (e) {
+      console.warn('Error writing ads storage file:', e);
+    }
+  }
+
+  let globalAds: ServerAdsterraAd[] = loadServerAds();
 
   // 1. Get all ads
   app.get("/api/ads", (req, res) => {
@@ -614,6 +574,7 @@ Return strictly JSON matching:
     } else {
       globalAds.push(newAd);
     }
+    saveServerAds(globalAds);
 
     res.json({ success: true, ad: newAd, ads: globalAds });
   });
@@ -625,6 +586,7 @@ Return strictly JSON matching:
       return res.status(400).json({ error: "Missing ad id" });
     }
     globalAds = globalAds.filter((a) => a.id !== id);
+    saveServerAds(globalAds);
     res.json({ success: true, ads: globalAds });
   });
 
@@ -634,6 +596,7 @@ Return strictly JSON matching:
       return res.status(400).json({ error: "Missing ad id" });
     }
     globalAds = globalAds.filter((a) => a.id !== id);
+    saveServerAds(globalAds);
     res.json({ success: true, ads: globalAds });
   });
 
@@ -645,6 +608,7 @@ Return strictly JSON matching:
     if (ad) {
       ad.active = typeof active === 'boolean' ? active : !ad.active;
       ad.updatedAt = new Date().toISOString();
+      saveServerAds(globalAds);
       return res.json({ success: true, ad, ads: globalAds });
     }
     res.status(404).json({ error: "Ad not found" });
@@ -684,8 +648,57 @@ Return strictly JSON matching:
     timestamp: string;
   }
 
-  const globalBlockedDevices: ServerBlockedDevice[] = [];
-  const globalLoginLogs: ServerLoginLog[] = [];
+  const BLOCKED_DEVICES_FILE = path.join(process.cwd(), 'data', 'blocked_devices.json');
+  const LOGIN_LOGS_FILE = path.join(process.cwd(), 'data', 'login_logs.json');
+
+  function loadBlockedDevices(): ServerBlockedDevice[] {
+    try {
+      if (fs.existsSync(BLOCKED_DEVICES_FILE)) {
+        const raw = fs.readFileSync(BLOCKED_DEVICES_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      console.warn('Error reading blocked devices file:', e);
+    }
+    return [];
+  }
+
+  function saveBlockedDevices(devices: ServerBlockedDevice[]) {
+    try {
+      const dir = path.dirname(BLOCKED_DEVICES_FILE);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(BLOCKED_DEVICES_FILE, JSON.stringify(devices, null, 2), 'utf-8');
+    } catch (e) {
+      console.warn('Error saving blocked devices file:', e);
+    }
+  }
+
+  function loadLoginLogs(): ServerLoginLog[] {
+    try {
+      if (fs.existsSync(LOGIN_LOGS_FILE)) {
+        const raw = fs.readFileSync(LOGIN_LOGS_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      console.warn('Error reading login logs file:', e);
+    }
+    return [];
+  }
+
+  function saveLoginLogs(logs: ServerLoginLog[]) {
+    try {
+      const dir = path.dirname(LOGIN_LOGS_FILE);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(LOGIN_LOGS_FILE, JSON.stringify(logs.slice(0, 300), null, 2), 'utf-8');
+    } catch (e) {
+      console.warn('Error saving login logs file:', e);
+    }
+  }
+
+  let globalBlockedDevices: ServerBlockedDevice[] = loadBlockedDevices();
+  let globalLoginLogs: ServerLoginLog[] = loadLoginLogs();
 
   function getClientIp(req: express.Request): string {
     const forwarded = req.headers['x-forwarded-for'];
@@ -772,6 +785,7 @@ Return strictly JSON matching:
       }
     }
 
+    saveBlockedDevices(globalBlockedDevices);
     res.json({ success: true, device: entry, totalBlocked: globalBlockedDevices.length });
   });
 
@@ -789,6 +803,7 @@ Return strictly JSON matching:
       }
     }
 
+    saveBlockedDevices(globalBlockedDevices);
     res.json({ success: true, remaining: globalBlockedDevices.length });
   });
 
@@ -807,9 +822,9 @@ Return strictly JSON matching:
       reason: data.reason,
       device: {
         deviceId: data.device?.deviceId || `dev_${Math.random().toString(36).substring(2, 9)}`,
-        ip: data.device?.ip || clientIp,
-        browser: data.device?.browser || 'Unknown',
-        os: data.device?.os || 'Unknown',
+        ip: (data.device?.ip && data.device.ip !== 'Unknown IP') ? data.device.ip : clientIp,
+        browser: data.device?.browser || 'Unknown Browser',
+        os: data.device?.os || 'Unknown OS',
         deviceType: data.device?.deviceType || 'Desktop',
         userAgent: data.device?.userAgent || req.headers['user-agent'] || '',
         city: data.device?.city,
@@ -819,17 +834,32 @@ Return strictly JSON matching:
       timestamp: data.timestamp || new Date().toISOString(),
     };
 
-    globalLoginLogs.unshift(newLog);
+    // Prevent duplicates
+    const existIdx = globalLoginLogs.findIndex((l) => l.id === newLog.id);
+    if (existIdx >= 0) {
+      globalLoginLogs[existIdx] = newLog;
+    } else {
+      globalLoginLogs.unshift(newLog);
+    }
+
     if (globalLoginLogs.length > 300) {
       globalLoginLogs.pop();
     }
 
-    res.json({ success: true, log: newLog });
+    saveLoginLogs(globalLoginLogs);
+    res.json({ success: true, log: newLog, totalLogs: globalLoginLogs.length });
   });
 
   // 7. Get login logs
   app.get("/api/security/logs", (req, res) => {
     res.json({ success: true, logs: globalLoginLogs });
+  });
+
+  // 8. Clear login logs
+  app.post("/api/security/clear-logs", (req, res) => {
+    globalLoginLogs = [];
+    saveLoginLogs(globalLoginLogs);
+    res.json({ success: true, logs: [] });
   });
 
   // Vite middleware in dev or static serving in production
