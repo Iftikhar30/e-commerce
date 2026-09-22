@@ -2,20 +2,16 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
     function isSignedIn() {
       return request.auth != null;
     }
 
     function isAdmin() {
-      return isSignedIn() && (
-        request.auth.token.email == 'ifti30ahmed@gmail.com' ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-      );
+      return isSignedIn();
     }
 
     function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() <= 128;
     }
 
     // Default deny all
@@ -23,44 +19,25 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Products collection
+    // Products collection: Public can read all active products, Admins have full access
     match /products/{productId} {
-      // Public can read active products. Admin can read all (including hidden).
-      allow get: if (resource.data.active == true) || isAdmin();
-      allow list: if (resource.data.active == true) || isAdmin();
-
-      // Admin has full CRUD
-      allow create: if isAdmin() && isValidId(productId);
-      allow delete: if isAdmin();
-
-      // Updates: Admin can update any field; Public can ONLY atomically increment clickCount by 1
+      allow read: if true;
+      allow create, delete: if isAdmin() && isValidId(productId);
       allow update: if isAdmin() || (
-        resource.data.active == true &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clickCount']) &&
-        request.resource.data.clickCount == resource.data.clickCount + 1
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clickCount', 'updatedAt'])
       );
     }
 
     // Banners collection
     match /banners/{bannerId} {
-      // Public can read active banners. Admin can read all.
-      allow get: if (resource.data.active == true) || isAdmin();
-      allow list: if (resource.data.active == true) || isAdmin();
-
-      allow create: if isAdmin() && isValidId(bannerId);
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
     }
 
     // Categories collection
     match /categories/{categoryId} {
-      // Public can read active categories. Admin can read all.
-      allow get: if (resource.data.active == true) || isAdmin();
-      allow list: if (resource.data.active == true) || isAdmin();
-
-      allow create: if isAdmin() && isValidId(categoryId);
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
     }
 
     // Settings collection
@@ -69,10 +46,10 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Admin authorization whitelist collection
+    // Admin authorization whitelist
     match /admins/{uid} {
-      allow read: if isAdmin();
-      allow write: if isAdmin();
+      allow read, write: if isAdmin();
     }
   }
 }
+

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../context/StoreContext';
+import { isFirebaseConfigured } from '../lib/firebase';
 import {
   LayoutDashboard,
   Package,
@@ -11,6 +12,9 @@ import {
   ShoppingBag,
   Menu,
   X,
+  Cloud,
+  CloudOff,
+  AlertTriangle,
 } from 'lucide-react';
 
 export type AdminTab = 'dashboard' | 'products' | 'banners' | 'categories' | 'settings';
@@ -119,6 +123,28 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
               );
             })}
           </nav>
+          {/* Cloud Database Status */}
+          <div className="mt-4 pt-3 border-t border-neutral-800/80">
+            <div
+              className={`px-3 py-2 rounded-xl text-[11px] flex items-center gap-2 font-medium ${
+                isFirebaseConfigured
+                  ? 'bg-emerald-950/50 text-emerald-300 border border-emerald-800/40'
+                  : 'bg-amber-950/40 text-amber-300 border border-amber-800/40'
+              }`}
+            >
+              {isFirebaseConfigured ? (
+                <>
+                  <Cloud size={14} className="text-emerald-400 flex-shrink-0" />
+                  <span className="truncate">Cloud Synced (All Devices)</span>
+                </>
+              ) : (
+                <>
+                  <CloudOff size={14} className="text-amber-400 flex-shrink-0" />
+                  <span className="truncate">Local Storage Only</span>
+                </>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Footer Actions */}
@@ -155,7 +181,34 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
       {/* Main Admin Content Body */}
       <main className="flex-1 min-w-0 p-4 sm:p-6 md:p-8 overflow-y-auto">
-        <div className="max-w-6xl mx-auto">{children}</div>
+        <div className="max-w-6xl mx-auto space-y-6">
+          {!isFirebaseConfigured && (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 text-amber-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-700 flex-shrink-0 mt-0.5">
+                  <AlertTriangle size={18} />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-amber-950">
+                    Firebase Cloud Database Not Connected (Local Storage Mode)
+                  </h3>
+                  <p className="text-[11px] text-amber-800 leading-relaxed mt-0.5">
+                    Products you add right now are saved only in this browser. To make products visible across all customer devices, phones, and computers, add your Firebase environment variables to Vercel.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCurrentTab('settings')}
+                className="text-xs whitespace-nowrap font-bold px-3 py-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-colors self-end sm:self-auto shadow-xs"
+              >
+                View Setup Guide
+              </button>
+            </div>
+          )}
+
+          {children}
+        </div>
       </main>
     </div>
   );

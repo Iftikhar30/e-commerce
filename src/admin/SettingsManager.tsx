@@ -93,6 +93,39 @@ export const SettingsManager: React.FC = () => {
         </p>
       </div>
 
+      {/* Firebase Environment Variables Helper Card */}
+      <div className="bg-neutral-900 text-neutral-100 p-5 rounded-2xl border border-neutral-800 shadow-sm space-y-4">
+        <div className="flex items-center gap-2.5 pb-3 border-b border-neutral-800">
+          <div className="w-8 h-8 rounded-lg bg-amber-400 text-neutral-950 flex items-center justify-center font-bold">
+            <Database size={16} />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-white">
+              Vercel Environment Variables Guide (For Cross-Device Live Sync)
+            </h3>
+            <p className="text-[11px] text-neutral-400">
+              To make products visible on all devices, phones, and visitors, add these variables in your Vercel Project Settings.
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-2 text-xs">
+          <div className="bg-neutral-950 p-3 rounded-xl border border-neutral-800 font-mono text-[11px] text-amber-300 space-y-1 overflow-x-auto select-all">
+            <p>VITE_FIREBASE_API_KEY=your_firebase_api_key</p>
+            <p>VITE_FIREBASE_AUTH_DOMAIN=your_project_id.firebaseapp.com</p>
+            <p>VITE_FIREBASE_PROJECT_ID=your_project_id</p>
+            <p>VITE_FIREBASE_STORAGE_BUCKET=your_project_id.appspot.com</p>
+            <p>VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id</p>
+            <p>VITE_FIREBASE_APP_ID=your_app_id</p>
+            <p>GEMINI_API_KEY=your_gemini_api_key</p>
+          </div>
+          <div className="text-[11px] text-neutral-400 space-y-1 pt-1">
+            <p>🔹 <strong>How to find Firebase credentials:</strong> Go to Firebase Console ➔ Project Settings ➔ General ➔ Under "Your apps" copy the Web app config.</p>
+            <p>🔹 <strong>Where to add in Vercel:</strong> Vercel Dashboard ➔ Select your Project ➔ Settings ➔ Environment Variables ➔ Add the keys ➔ Redeploy.</p>
+          </div>
+        </div>
+      </div>
+
       {/* Settings Form */}
       <form onSubmit={handleSave} className="bg-white p-5 rounded-2xl border border-neutral-200/90 shadow-2xs space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
