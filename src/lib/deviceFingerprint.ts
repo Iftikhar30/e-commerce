@@ -1,5 +1,6 @@
 import { DeviceInfo } from '../types';
 import { buildApiUrl } from './apiConfig';
+import { fetchCloudSecurityState } from './cloudSyncRelay';
 
 const DEVICE_STORAGE_KEY = 'app_security_device_id';
 
@@ -138,6 +139,7 @@ export async function fetchClientPublicIp(): Promise<{ ip?: string; city?: strin
 export async function checkServerBlockedStatus(
   deviceId: string
 ): Promise<{ isBlocked: boolean; matchedRecord?: any; clientIp?: string }> {
+  // 1. Check server API first
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 2500);
@@ -149,11 +151,34 @@ export async function checkServerBlockedStatus(
     );
     clearTimeout(timeout);
     if (res.ok) {
-      return await res.json();
+      const data = await res.json();
+      if (data.isBlocked) {
+        return data;
+      }
+    }
+  } catch {
+    // continue to cloud relay
+  }
+
+  // 2. Check universal cloud relay
+  try {
+    const cloudState = await fetchCloudSecurityState();
+    const ipInfo = await fetchClientPublicIp();
+    const clientIp = ipInfo.ip;
+
+    const matched = (cloudState.blocked || []).find((b) => {
+      if (deviceId && (b.deviceId === deviceId || b.id === deviceId)) return true;
+      if (clientIp && (b.ip === clientIp || b.id === clientIp || b.id === `ip_${clientIp.replace(/[^a-zA-Z0-9]/g, '_')}`)) return true;
+      return false;
+    });
+
+    if (matched) {
+      return { isBlocked: true, matchedRecord: matched, clientIp };
     }
   } catch {
     // ignore
   }
+
   return { isBlocked: false };
 }
 

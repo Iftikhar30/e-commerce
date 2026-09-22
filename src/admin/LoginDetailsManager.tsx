@@ -33,6 +33,7 @@ import {
 } from '../lib/securityService';
 import { getCurrentDeviceInfo } from '../lib/deviceFingerprint';
 import { buildApiUrl } from '../lib/apiConfig';
+import { fetchCloudSecurityState } from '../lib/cloudSyncRelay';
 
 export const LoginDetailsManager: React.FC = () => {
   const [logs, setLogs] = useState<LoginLog[]>([]);
@@ -119,19 +120,42 @@ export const LoginDetailsManager: React.FC = () => {
     return result;
   }, [logs, selectedFilter, searchQuery]);
 
-  // Handle manual refresh
+  // Handle manual refresh across cloud relay & server
   const handleManualRefresh = async () => {
     setIsRefreshing(true);
     try {
-      const apiUrl = buildApiUrl('/api/security/logs');
-      const res = await fetch(apiUrl);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.logs && Array.isArray(data.logs)) {
-          setLogs(data.logs);
-          saveLocalLoginLogs(data.logs);
+      const [cloudData, serverLogs] = await Promise.allSettled([
+        fetchCloudSecurityState(),
+        (async () => {
+          const apiUrl = buildApiUrl('/api/security/logs');
+          const res = await fetch(apiUrl);
+          if (res.ok) {
+            const data = await res.json();
+            return Array.isArray(data.logs) ? data.logs : [];
+          }
+          return [];
+        })(),
+      ]);
+
+      const cloudList = cloudData.status === 'fulfilled' && Array.isArray(cloudData.value.logs) ? cloudData.value.logs : [];
+      const srvList = serverLogs.status === 'fulfilled' && Array.isArray(serverLogs.value) ? serverLogs.value : [];
+
+      const combinedMap = new Map<string, LoginLog>();
+      cloudList.forEach((l) => l && l.id && !l.id.includes('sample') && combinedMap.set(l.id, l));
+      srvList.forEach((l) => l && l.id && !l.id.includes('sample') && combinedMap.set(l.id, l));
+      const local = getLocalLoginLogs();
+      local.forEach((l) => {
+        if (!combinedMap.has(l.id)) {
+          combinedMap.set(l.id, l);
         }
-      }
+      });
+
+      const sorted = Array.from(combinedMap.values()).sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+
+      setLogs(sorted);
+      saveLocalLoginLogs(sorted);
     } catch {
       // ignore
     } finally {

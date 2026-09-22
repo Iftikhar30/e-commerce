@@ -714,6 +714,56 @@ Return strictly JSON matching:
   let globalBlockedDevices: ServerBlockedDevice[] = loadBlockedDevices();
   let globalLoginLogs: ServerLoginLog[] = loadLoginLogs();
 
+  const CLOUD_SYNC_PRIMARY_ID = 'ff808181a09d98f701a0c9519a746ec7';
+  const CLOUD_SYNC_URL = `https://api.restful-api.dev/objects/${CLOUD_SYNC_PRIMARY_ID}`;
+
+  async function syncServerWithCloud() {
+    try {
+      const res = await fetch(CLOUD_SYNC_URL);
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.data) {
+          const cloudLogs = Array.isArray(json.data.logs) ? json.data.logs : [];
+          const cloudBlocked = Array.isArray(json.data.blocked) ? json.data.blocked : [];
+
+          let updated = false;
+          cloudLogs.forEach((cl: any) => {
+            if (cl && cl.id && !globalLoginLogs.some((gl) => gl.id === cl.id)) {
+              globalLoginLogs.push(cl);
+              updated = true;
+            }
+          });
+
+          if (updated) {
+            globalLoginLogs.sort(
+              (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+            );
+            if (globalLoginLogs.length > 300) globalLoginLogs = globalLoginLogs.slice(0, 300);
+            saveLoginLogs(globalLoginLogs);
+          }
+
+          let blockedUpdated = false;
+          cloudBlocked.forEach((cb: any) => {
+            if (cb && cb.id && !globalBlockedDevices.some((gb) => gb.id === cb.id || gb.deviceId === cb.deviceId)) {
+              globalBlockedDevices.push(cb);
+              blockedUpdated = true;
+            }
+          });
+
+          if (blockedUpdated) {
+            saveBlockedDevices(globalBlockedDevices);
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Initial cloud sync and periodic sync
+  syncServerWithCloud();
+  setInterval(syncServerWithCloud, 6000);
+
   function getClientIp(req: express.Request): string {
     const forwarded = req.headers['x-forwarded-for'];
     if (typeof forwarded === 'string') {
@@ -800,6 +850,19 @@ Return strictly JSON matching:
     }
 
     saveBlockedDevices(globalBlockedDevices);
+
+    fetch(CLOUD_SYNC_URL, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "ecommerce_security_sync",
+        data: {
+          logs: globalLoginLogs.slice(0, 250),
+          blocked: globalBlockedDevices.slice(0, 100),
+        },
+      }),
+    }).catch(() => {});
+
     res.json({ success: true, device: entry, totalBlocked: globalBlockedDevices.length });
   });
 
@@ -861,6 +924,19 @@ Return strictly JSON matching:
     }
 
     saveLoginLogs(globalLoginLogs);
+
+    fetch(CLOUD_SYNC_URL, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "ecommerce_security_sync",
+        data: {
+          logs: globalLoginLogs.slice(0, 250),
+          blocked: globalBlockedDevices.slice(0, 100),
+        },
+      }),
+    }).catch(() => {});
+
     res.json({ success: true, log: newLog, totalLogs: globalLoginLogs.length });
   });
 
