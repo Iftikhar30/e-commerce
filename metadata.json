@@ -1,0 +1,6 @@
+{
+  "name": "IFTI TechZyro",
+  "description": "IFTI TechZyro - Curated Amazon product discovery and affiliate storefront for trending tech, smart gadgets, and everyday essentials.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

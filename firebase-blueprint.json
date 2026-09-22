@@ -1,0 +1,258 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Amazon storefront affiliate product showcase item",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "description": "Product display title"
+        },
+        "image": {
+          "type": "string",
+          "maxLength": 2048,
+          "description": "Product main image URL"
+        },
+        "amazonUrl": {
+          "type": "string",
+          "maxLength": 2048,
+          "description": "Direct Amazon affiliate or product URL"
+        },
+        "asin": {
+          "type": "string",
+          "maxLength": 30,
+          "description": "Amazon Standard Identification Number (ASIN)"
+        },
+        "price": {
+          "type": "number",
+          "description": "Product regular or displayed price"
+        },
+        "originalPrice": {
+          "type": "number",
+          "description": "Original strike-through price if discounted"
+        },
+        "rating": {
+          "type": "number",
+          "description": "Average review rating from 0.0 to 5.0"
+        },
+        "reviewCount": {
+          "type": "number",
+          "description": "Total count of reviews"
+        },
+        "category": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Category slug or name"
+        },
+        "badge": {
+          "type": "string",
+          "enum": ["", "New", "Trending", "Best Deal", "Featured", "Limited Deal"],
+          "description": "Visual marketing badge"
+        },
+        "clickCount": {
+          "type": "number",
+          "description": "Total redirection clicks tracked for this product"
+        },
+        "order": {
+          "type": "number",
+          "description": "Manual display sorting index"
+        },
+        "pinned": {
+          "type": "boolean",
+          "description": "Pinned status, shows at top of public catalog"
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Visibility flag (true = shown publicly, false = hidden)"
+        },
+        "featured": {
+          "type": "boolean",
+          "description": "Highlighted in the homepage Featured section"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp or ServerTimestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp or ServerTimestamp"
+        }
+      },
+      "required": ["title", "image", "amazonUrl", "active", "order"]
+    },
+    "Banner": {
+      "title": "Banner",
+      "description": "Promotional or advertisement showcase banner",
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string",
+          "maxLength": 2048,
+          "description": "Banner graphic image URL"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Banner headline or alt text"
+        },
+        "link": {
+          "type": "string",
+          "maxLength": 2048,
+          "description": "Optional destination URL if clicked"
+        },
+        "isAd": {
+          "type": "boolean",
+          "description": "Whether to display the ADVERTISEMENT tag"
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether the banner is active and visible"
+        },
+        "order": {
+          "type": "number",
+          "description": "Carousel / display order sequence"
+        },
+        "startDate": {
+          "type": "string",
+          "description": "Optional scheduled start date"
+        },
+        "endDate": {
+          "type": "string",
+          "description": "Optional scheduled expiration date"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Update timestamp"
+        }
+      },
+      "required": ["image", "active", "order"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Product grouping category",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Category display name"
+        },
+        "slug": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "URL-friendly category identifier"
+        },
+        "order": {
+          "type": "number",
+          "description": "Display order"
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Category active status"
+        }
+      },
+      "required": ["name", "slug", "active"]
+    },
+    "Setting": {
+      "title": "Setting",
+      "description": "Storefront configuration settings",
+      "type": "object",
+      "properties": {
+        "siteName": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Storefront brand name"
+        },
+        "logoUrl": {
+          "type": "string",
+          "maxLength": 2048,
+          "description": "Custom logo image URL"
+        },
+        "currency": {
+          "type": "string",
+          "maxLength": 10,
+          "description": "Currency symbol e.g. $"
+        },
+        "affiliateDisclosure": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "Official Amazon affiliate compliance disclosure"
+        },
+        "footerText": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Custom footer copyright/note"
+        },
+        "contactEmail": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Contact email"
+        }
+      }
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Authorized admin users record",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "maxLength": 255,
+          "description": "Admin email address"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "superadmin"],
+          "description": "Role level"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Registered timestamp"
+        }
+      },
+      "required": ["email", "role"]
+    }
+  },
+  "firestore": {
+    "/products/{productId}": {
+      "schema": {
+        "$ref": "#/entities/Product"
+      },
+      "description": "Collection of Amazon products for display and affiliate click redirection"
+    },
+    "/banners/{bannerId}": {
+      "schema": {
+        "$ref": "#/entities/Banner"
+      },
+      "description": "Collection of promotional offer and advertisement banners"
+    },
+    "/categories/{categoryId}": {
+      "schema": {
+        "$ref": "#/entities/Category"
+      },
+      "description": "Collection of product categories"
+    },
+    "/settings/{settingId}": {
+      "schema": {
+        "$ref": "#/entities/Setting"
+      },
+      "description": "Storefront settings document"
+    },
+    "/admins/{uid}": {
+      "schema": {
+        "$ref": "#/entities/Admin"
+      },
+      "description": "Security whitelist of authenticated administrator user IDs"
+    }
+  }
+}
