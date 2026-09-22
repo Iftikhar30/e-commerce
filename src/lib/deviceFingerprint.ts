@@ -1,4 +1,5 @@
 import { DeviceInfo } from '../types';
+import { buildApiUrl } from './apiConfig';
 
 const DEVICE_STORAGE_KEY = 'app_security_device_id';
 
@@ -81,8 +82,8 @@ export async function fetchClientPublicIp(): Promise<{ ip?: string; city?: strin
   // 1. Try local server API route first
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1200);
-    const res = await fetch('/api/client-ip', { signal: controller.signal });
+    const timeout = setTimeout(() => controller.abort(), 1500);
+    const res = await fetch(buildApiUrl('/api/client-ip'), { signal: controller.signal });
     clearTimeout(timeout);
     if (res.ok) {
       const data = await res.json();
@@ -139,10 +140,13 @@ export async function checkServerBlockedStatus(
 ): Promise<{ isBlocked: boolean; matchedRecord?: any; clientIp?: string }> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000);
-    const res = await fetch(`/api/security/check-client?deviceId=${encodeURIComponent(deviceId)}`, {
-      signal: controller.signal,
-    });
+    const timeout = setTimeout(() => controller.abort(), 2500);
+    const res = await fetch(
+      buildApiUrl(`/api/security/check-client?deviceId=${encodeURIComponent(deviceId)}`),
+      {
+        signal: controller.signal,
+      }
+    );
     clearTimeout(timeout);
     if (res.ok) {
       return await res.json();

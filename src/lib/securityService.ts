@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
 import { LoginLog, BlockedDevice } from '../types';
+import { buildApiUrl } from './apiConfig';
 
 const LOCAL_LOGIN_LOGS_KEY = 'app_security_login_logs_v2';
 const LOCAL_BLOCKED_DEVICES_KEY = 'app_security_blocked_devices_v2';
@@ -60,7 +61,7 @@ export function saveLocalBlockedDevices(devices: BlockedDevice[]) {
   }
 }
 
-// Record a new login attempt (both success and failed attempts)
+// Record a new login attempt (both success and failed attempts across any device)
 export async function recordLoginAttempt(data: {
   email: string;
   status: 'success' | 'failed';
@@ -92,15 +93,21 @@ export async function recordLoginAttempt(data: {
   currentLogs.unshift(newLog);
   saveLocalLoginLogs(currentLogs);
 
-  // 2. Sync to Backend Server API for universal cross-device persistence
+  // 2. Sync to Universal Backend Server API with keepalive for mobile resilience
   try {
-    fetch('/api/security/record-login', {
+    const apiUrl = buildApiUrl('/api/security/record-login');
+    await fetch(apiUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify(newLog),
-    }).catch(() => {});
-  } catch {
-    // ignore
+      keepalive: true,
+    }).catch((err) => {
+      console.warn('Network sync warning for login attempt:', err);
+    });
+  } catch (err) {
+    console.warn('Backend record-login sync error:', err);
   }
 
   // 3. Save to Firestore if configured
@@ -116,7 +123,7 @@ export async function recordLoginAttempt(data: {
   return newLog;
 }
 
-// Block a device
+// Block a device (Enforced universally across all browsers and devices)
 export async function blockDevice(device: BlockedDevice): Promise<void> {
   // 1. Update local cache
   const localList = getLocalBlockedDevices().filter(
@@ -138,12 +145,14 @@ export async function blockDevice(device: BlockedDevice): Promise<void> {
 
   saveLocalBlockedDevices(localList);
 
-  // 2. Sync to Backend Server API
+  // 2. Sync to Universal Backend Server API
   try {
-    fetch('/api/security/block', {
+    const apiUrl = buildApiUrl('/api/security/block');
+    await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(device),
+      keepalive: true,
     }).catch(() => {});
   } catch {
     // ignore
@@ -173,10 +182,12 @@ export async function unblockDevice(deviceIdOrIp: string): Promise<void> {
 
   // Sync to Backend Server
   try {
-    fetch('/api/security/unblock', {
+    const apiUrl = buildApiUrl('/api/security/unblock');
+    await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: deviceIdOrIp }),
+      keepalive: true,
     }).catch(() => {});
   } catch {
     // ignore
@@ -198,9 +209,11 @@ export async function clearAllLoginLogs(): Promise<void> {
   saveLocalLoginLogs([]);
 
   try {
-    await fetch('/api/security/clear-logs', {
+    const apiUrl = buildApiUrl('/api/security/clear-logs');
+    await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
     });
   } catch {
     // ignore
@@ -219,7 +232,7 @@ export async function clearAllLoginLogs(): Promise<void> {
   }
 }
 
-// Real-time subscription to blocked devices list
+// Real-time subscription to blocked devices list across all devices
 export function subscribeToBlockedDevices(
   callback: (devices: BlockedDevice[]) => void
 ): () => void {
@@ -227,7 +240,8 @@ export function subscribeToBlockedDevices(
 
   const fetchServerBlocked = async () => {
     try {
-      const res = await fetch('/api/security/blocked');
+      const apiUrl = buildApiUrl('/api/security/blocked');
+      const res = await fetch(apiUrl);
       if (res.ok) {
         const data = await res.json();
         if (data.devices && Array.isArray(data.devices)) {
@@ -282,7 +296,8 @@ export function subscribeToBlockedDevices(
   window.addEventListener('storage', handleLocalChange);
   window.addEventListener('app_security_blocked_update', handleLocalChange);
 
-  const intervalId = setInterval(fetchServerBlocked, 4000);
+  // Poll server every 3 seconds for immediate cross-device enforcement
+  const intervalId = setInterval(fetchServerBlocked, 3000);
 
   return () => {
     if (unsubscribeFirestore) unsubscribeFirestore();
@@ -292,7 +307,7 @@ export function subscribeToBlockedDevices(
   };
 }
 
-// Real-time subscription to Login Logs
+// Real-time subscription to Login Logs across all devices
 export function subscribeToLoginLogs(
   callback: (logs: LoginLog[]) => void
 ): () => void {
@@ -301,7 +316,8 @@ export function subscribeToLoginLogs(
   // Function to fetch from server API
   const fetchServerLogs = async () => {
     try {
-      const res = await fetch('/api/security/logs');
+      const apiUrl = buildApiUrl('/api/security/logs');
+      const res = await fetch(apiUrl);
       if (res.ok) {
         const data = await res.json();
         if (data.logs && Array.isArray(data.logs)) {
@@ -336,7 +352,7 @@ export function subscribeToLoginLogs(
   if (isFirebaseConfigured && db) {
     try {
       const colRef = collection(db, 'login_logs');
-      const q = query(colRef, orderBy('timestamp', 'desc'), limit(200));
+      const q = query(colRef, orderBy('timestamp', 'desc'), limit(250));
       unsubscribeFirestore = onSnapshot(
         q,
         (snapshot) => {
@@ -380,8 +396,8 @@ export function subscribeToLoginLogs(
   window.addEventListener('storage', handleLocalChange);
   window.addEventListener('app_security_login_logs_update', handleLocalChange);
 
-  // Poll server every 4 seconds for cross-device updates
-  const intervalId = setInterval(fetchServerLogs, 4000);
+  // Poll server every 3 seconds for continuous cross-device sync
+  const intervalId = setInterval(fetchServerLogs, 3000);
 
   return () => {
     if (unsubscribeFirestore) unsubscribeFirestore();

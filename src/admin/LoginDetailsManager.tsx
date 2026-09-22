@@ -32,6 +32,7 @@ import {
   clearAllLoginLogs,
 } from '../lib/securityService';
 import { getCurrentDeviceInfo } from '../lib/deviceFingerprint';
+import { buildApiUrl } from '../lib/apiConfig';
 
 export const LoginDetailsManager: React.FC = () => {
   const [logs, setLogs] = useState<LoginLog[]>([]);
@@ -122,7 +123,8 @@ export const LoginDetailsManager: React.FC = () => {
   const handleManualRefresh = async () => {
     setIsRefreshing(true);
     try {
-      const res = await fetch('/api/security/logs');
+      const apiUrl = buildApiUrl('/api/security/logs');
+      const res = await fetch(apiUrl);
       if (res.ok) {
         const data = await res.json();
         if (data.logs && Array.isArray(data.logs)) {

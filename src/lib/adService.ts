@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
 import { AdsterraAd } from '../types';
+import { buildApiUrl } from './apiConfig';
 
 const LOCAL_ADS_KEY = 'app_adsterra_ads_storage_v2';
 const ADS_INITIALIZED_KEY = 'app_adsterra_ads_initialized_flag_v3';
@@ -121,10 +122,12 @@ export async function saveAd(ad: AdsterraAd): Promise<void> {
 
   // 2. Sync to Backend Server for instant cross-device distribution
   try {
-    fetch('/api/ads', {
+    const apiUrl = buildApiUrl('/api/ads');
+    fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedAd),
+      keepalive: true,
     }).catch(() => {});
   } catch {
     // ignore
@@ -149,10 +152,12 @@ export async function deleteAd(adId: string): Promise<void> {
 
   // 2. Delete on backend server so it never comes back from any device
   try {
-    await fetch('/api/ads/delete', {
+    const apiUrl = buildApiUrl('/api/ads/delete');
+    await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: adId }),
+      keepalive: true,
     }).catch(() => {});
   } catch {
     // ignore
@@ -180,10 +185,12 @@ export async function toggleAdActive(adId: string, active: boolean): Promise<voi
 
   // Sync to server
   try {
-    fetch(`/api/ads/${adId}/toggle`, {
+    const apiUrl = buildApiUrl(`/api/ads/${adId}/toggle`);
+    fetch(apiUrl, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ active }),
+      keepalive: true,
     }).catch(() => {});
   } catch {
     // ignore
@@ -206,7 +213,8 @@ export function subscribeToAds(callback: (ads: AdsterraAd[]) => void): () => voi
   // 2. Fetch latest ads from backend server
   const fetchServerAds = async () => {
     try {
-      const res = await fetch('/api/ads');
+      const apiUrl = buildApiUrl('/api/ads');
+      const res = await fetch(apiUrl);
       if (res.ok) {
         const data = await res.json();
         if (data && Array.isArray(data.ads)) {
