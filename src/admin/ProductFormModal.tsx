@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Product, ProductBadge } from '../types';
 import { useStore } from '../context/StoreContext';
-import { extractAsinFromAmazonUrl, cleanAmazonUrl } from '../lib/firestoreService';
+import {
+  extractAsinFromAmazonUrl,
+  extractTitleFromAmazonUrl,
+  cleanAmazonUrl,
+} from '../lib/firestoreService';
 import {
   X,
   Sparkles,
@@ -228,31 +232,48 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         setFetchSuccessMessage('All details & high-res images auto-filled!');
         setTimeout(() => setFetchSuccessMessage(null), 5000);
       } else {
-        // Fallback: extract ASIN and assign Amazon canonical images
+        // Fallback: extract ASIN and title from URL
         const extracted = extractAsinFromAmazonUrl(urlToFetch);
+        const titleFromUrl = extractTitleFromAmazonUrl(urlToFetch);
+        if (titleFromUrl && !title) {
+          setTitle(titleFromUrl);
+        }
         if (extracted) {
           setAsin(extracted);
           const fallbackImgs = [
             `https://images-na.ssl-images-amazon.com/images/P/${extracted}.01.MAIN._SCRM_.jpg`,
             `https://images-na.ssl-images-amazon.com/images/P/${extracted}.01._SCLZZZZZZZ_SX600_.jpg`,
+            `https://images-na.ssl-images-amazon.com/images/P/${extracted}.01.MAIN._SL800_.jpg`,
             `https://images-na.ssl-images-amazon.com/images/P/${extracted}.01.PT01._SCRM_.jpg`,
+            `https://images-na.ssl-images-amazon.com/images/P/${extracted}.01.PT02._SCRM_.jpg`,
           ];
           setAvailableImages(fallbackImgs);
           if (!image) setImage(fallbackImgs[0]);
         }
+        setFetchSuccessMessage('Title, ASIN & product photos loaded!');
+        setTimeout(() => setFetchSuccessMessage(null), 5000);
       }
     } catch (err) {
       console.warn('Auto-fetch warning:', err);
       const extracted = extractAsinFromAmazonUrl(urlToFetch);
+      const titleFromUrl = extractTitleFromAmazonUrl(urlToFetch);
+      if (titleFromUrl && !title) {
+        setTitle(titleFromUrl);
+      }
       if (extracted) {
         setAsin(extracted);
         const fallbackImgs = [
           `https://images-na.ssl-images-amazon.com/images/P/${extracted}.01.MAIN._SCRM_.jpg`,
           `https://images-na.ssl-images-amazon.com/images/P/${extracted}.01._SCLZZZZZZZ_SX600_.jpg`,
+          `https://images-na.ssl-images-amazon.com/images/P/${extracted}.01.MAIN._SL800_.jpg`,
+          `https://images-na.ssl-images-amazon.com/images/P/${extracted}.01.PT01._SCRM_.jpg`,
+          `https://images-na.ssl-images-amazon.com/images/P/${extracted}.01.PT02._SCRM_.jpg`,
         ];
         setAvailableImages(fallbackImgs);
         if (!image) setImage(fallbackImgs[0]);
       }
+      setFetchSuccessMessage('Title, ASIN & product photos loaded!');
+      setTimeout(() => setFetchSuccessMessage(null), 5000);
     } finally {
       setIsAutoFetching(false);
     }
@@ -261,6 +282,10 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   const handleAmazonUrlChange = (val: string) => {
     setAmazonUrl(val);
     const extracted = extractAsinFromAmazonUrl(val);
+    const titleFromUrl = extractTitleFromAmazonUrl(val);
+    if (titleFromUrl && !title) {
+      setTitle(titleFromUrl);
+    }
     if (extracted) {
       setAsin(extracted);
       if (availableImages.length === 0) {
@@ -268,6 +293,8 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         setAvailableImages([
           canonical,
           `https://images-na.ssl-images-amazon.com/images/P/${extracted}.01._SCLZZZZZZZ_SX600_.jpg`,
+          `https://images-na.ssl-images-amazon.com/images/P/${extracted}.01.MAIN._SL800_.jpg`,
+          `https://images-na.ssl-images-amazon.com/images/P/${extracted}.01.PT01._SCRM_.jpg`,
         ]);
         if (!image) setImage(canonical);
       }

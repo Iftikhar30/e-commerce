@@ -621,9 +621,35 @@ export async function saveSettings(settings: StoreSettings): Promise<void> {
 
 export function extractAsinFromAmazonUrl(url: string): string | null {
   if (!url) return null;
-  // Patterns like /dp/B08XYZ1234 or /gp/product/B08XYZ1234 or /ASIN/B08XYZ1234
-  const match = url.match(/(?:\/dp\/|\/gp\/product\/|\/exec\/obidos\/asin\/|d\/)([A-Z0-9]{10})/i);
+  const match = url.match(/(?:\/dp\/|\/gp\/product\/|\/exec\/obidos\/asin\/|\/d\/|ASIN=|\/)([A-Z0-9]{10})(?:[/?&#]|$)/i);
   return match ? match[1].toUpperCase() : null;
+}
+
+export function extractTitleFromAmazonUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    for (const part of parts) {
+      if (
+        part !== "dp" &&
+        part !== "gp" &&
+        part !== "product" &&
+        part !== "d" &&
+        part.length > 4 &&
+        !/^[A-Z0-9]{10}$/i.test(part)
+      ) {
+        const readable = decodeURIComponent(part)
+          .replace(/[-_+]/g, " ")
+          .replace(/\b\w/g, (l) => l.toUpperCase());
+        if (readable.length > 4) {
+          return readable;
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return "";
 }
 
 export function cleanAmazonUrl(url: string): string {
@@ -633,3 +659,4 @@ export function cleanAmazonUrl(url: string): string {
   }
   return url.trim();
 }
+
