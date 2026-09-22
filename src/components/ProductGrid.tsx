@@ -1,17 +1,20 @@
 import React from 'react';
-import { Product } from '../types';
+import { Product, AdsterraAd } from '../types';
 import { ProductCard } from './ProductCard';
 import { SkeletonCard } from './SkeletonCard';
 import { ShoppingBag } from 'lucide-react';
+import { AdDisplaySlot } from './AdDisplaySlot';
 
 interface ProductGridProps {
   products: Product[];
+  ads?: AdsterraAd[];
   loading?: boolean;
   onResetFilters?: () => void;
 }
 
 export const ProductGrid: React.FC<ProductGridProps> = ({
   products,
+  ads = [],
   loading = false,
   onResetFilters,
 }) => {
@@ -48,14 +51,43 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
     );
   }
 
+  // Check which mid-grid placements have active ads
+  const hasAd4 = ads.some((a) => a.active && a.placement === 'after_4_products');
+  const hasAd8 = ads.some((a) => a.active && a.placement === 'after_8_products');
+  const hasAd12 = ads.some((a) => a.active && a.placement === 'after_12_products');
+
   return (
     <div
       id="product-discovery-grid"
       className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5 sm:gap-4"
     >
-      {products.map((product) => (
-        <ProductCard key={product.id} product={product} />
+      {products.map((product, idx) => (
+        <React.Fragment key={product.id}>
+          <ProductCard product={product} />
+
+          {/* Adsterra: After 4 products */}
+          {idx === 3 && hasAd4 && (
+            <div className="col-span-full py-1">
+              <AdDisplaySlot placement="after_4_products" allAds={ads} />
+            </div>
+          )}
+
+          {/* Adsterra: After 8 products */}
+          {idx === 7 && hasAd8 && (
+            <div className="col-span-full py-1">
+              <AdDisplaySlot placement="after_8_products" allAds={ads} />
+            </div>
+          )}
+
+          {/* Adsterra: After 12 products */}
+          {idx === 11 && hasAd12 && (
+            <div className="col-span-full py-1">
+              <AdDisplaySlot placement="after_12_products" allAds={ads} />
+            </div>
+          )}
+        </React.Fragment>
       ))}
     </div>
   );
 };
+

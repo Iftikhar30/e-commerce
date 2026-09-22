@@ -44,6 +44,32 @@ export interface Category {
   active: boolean;
 }
 
+export type AdPlacement =
+  | 'after_banner'
+  | 'after_4_products'
+  | 'after_8_products'
+  | 'after_12_products'
+  | 'before_footer';
+
+export type AdSize = '320x50' | '300x250' | '728x90' | 'custom';
+export type AdDeviceTarget = 'all' | 'mobile_only' | 'desktop_only';
+
+export interface AdsterraAd {
+  id: string;
+  title: string;
+  format: string; // e.g., 'Banner', 'Native', 'Popunder', 'Social Bar', 'Direct Link', 'Custom'
+  size: AdSize;
+  width?: number;
+  height?: number;
+  adCode: string; // Adsterra JavaScript or iframe snippet
+  placement: AdPlacement;
+  deviceTarget: AdDeviceTarget;
+  active: boolean;
+  order: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface StoreSettings {
   siteName: string;
   logoUrl?: string;

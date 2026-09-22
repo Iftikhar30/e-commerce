@@ -47,6 +47,12 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Ads collection: Public can read active ads, Admins have full access
+    match /ads/{adId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // Blocked devices collection: public read so blocked devices can be immediately identified, write by admin
     match /blocked_devices/{deviceId} {
       allow read: if true;

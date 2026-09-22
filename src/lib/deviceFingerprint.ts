@@ -78,22 +78,24 @@ let cachedIpInfo: { ip?: string; city?: string; country?: string } | null = null
 export async function fetchClientPublicIp(): Promise<{ ip?: string; city?: string; country?: string }> {
   if (cachedIpInfo) return cachedIpInfo;
 
+  // 1. Try local server API route first
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000);
-    const res = await fetch('https://ipapi.co/json/', { signal: controller.signal });
+    const timeout = setTimeout(() => controller.abort(), 1200);
+    const res = await fetch('/api/client-ip', { signal: controller.signal });
     clearTimeout(timeout);
     if (res.ok) {
       const data = await res.json();
-      cachedIpInfo = {
-        ip: data.ip,
-        city: data.city,
-        country: data.country_name || data.country,
-      };
-      return cachedIpInfo;
+      if (data.ip && data.ip !== '127.0.0.1') {
+        cachedIpInfo = { ip: data.ip };
+      }
     }
   } catch {
-    // fallback to ipify
+    // continue to public IP providers
+  }
+
+  // 2. Try ipify (very fast & reliable for cross-device public IP)
+  if (!cachedIpInfo?.ip) {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 1500);
@@ -101,15 +103,54 @@ export async function fetchClientPublicIp(): Promise<{ ip?: string; city?: strin
       clearTimeout(timeout);
       if (res.ok) {
         const data = await res.json();
-        cachedIpInfo = { ip: data.ip };
-        return cachedIpInfo;
+        if (data.ip) {
+          cachedIpInfo = { ip: data.ip };
+        }
       }
     } catch {
-      // ignore
+      // continue
     }
   }
 
-  return {};
+  // 3. Try ipapi for geolocation
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1800);
+    const res = await fetch('https://ipapi.co/json/', { signal: controller.signal });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const data = await res.json();
+      cachedIpInfo = {
+        ip: data.ip || cachedIpInfo?.ip,
+        city: data.city,
+        country: data.country_name || data.country,
+      };
+      return cachedIpInfo;
+    }
+  } catch {
+    // ignore
+  }
+
+  return cachedIpInfo || {};
+}
+
+export async function checkServerBlockedStatus(
+  deviceId: string
+): Promise<{ isBlocked: boolean; matchedRecord?: any; clientIp?: string }> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    const res = await fetch(`/api/security/check-client?deviceId=${encodeURIComponent(deviceId)}`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // ignore
+  }
+  return { isBlocked: false };
 }
 
 export async function getCurrentDeviceInfo(): Promise<DeviceInfo> {

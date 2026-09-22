@@ -113,7 +113,18 @@ export async function recordLoginAttempt(data: {
   localLogs.unshift(newLog);
   saveLocalLoginLogs(localLogs);
 
-  // 2. Save to Firestore if available
+  // 2. Sync to Backend Server API for cross-device persistence
+  try {
+    fetch('/api/security/record-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newLog),
+    }).catch(() => {});
+  } catch {
+    // ignore
+  }
+
+  // 3. Save to Firestore if available
   if (isFirebaseConfigured && db) {
     try {
       const logRef = doc(db, 'login_logs', id);
@@ -128,21 +139,49 @@ export async function recordLoginAttempt(data: {
 
 // Block a device
 export async function blockDevice(device: BlockedDevice): Promise<void> {
-  // Update local cache
+  // 1. Update local cache
   const localList = getLocalBlockedDevices().filter(
-    (b) => b.id !== device.id && b.deviceId !== device.deviceId
+    (b) => b.id !== device.id && b.deviceId !== device.deviceId && (device.ip ? b.ip !== device.ip : true)
   );
   localList.unshift(device);
+
+  // If device has an IP, also add an IP block entry so other browsers on the same device/network are blocked
+  if (device.ip && device.ip !== 'Unknown IP' && device.ip !== '127.0.0.1') {
+    const ipEntry: BlockedDevice = {
+      ...device,
+      id: `ip_${device.ip}`,
+      deviceId: device.deviceId,
+    };
+    if (!localList.some((b) => b.id === ipEntry.id)) {
+      localList.unshift(ipEntry);
+    }
+  }
+
   saveLocalBlockedDevices(localList);
 
   // Dispatch custom event for immediate same-tab reactive update
   window.dispatchEvent(new CustomEvent('app_security_blocked_update'));
 
-  // Update Firestore
+  // 2. Sync to Backend Server API for universal cross-device enforcement
+  try {
+    fetch('/api/security/block', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(device),
+    }).catch(() => {});
+  } catch {
+    // ignore
+  }
+
+  // 3. Update Firestore
   if (isFirebaseConfigured && db) {
     try {
       const docRef = doc(db, 'blocked_devices', device.id);
       await setDoc(docRef, device);
+      if (device.ip && device.ip !== 'Unknown IP' && device.ip !== '127.0.0.1') {
+        const ipDocRef = doc(db, 'blocked_devices', `ip_${device.ip.replace(/[^a-zA-Z0-9]/g, '_')}`);
+        await setDoc(ipDocRef, device);
+      }
     } catch (err) {
       console.warn('Firestore blockDevice warning:', err);
     }
@@ -159,6 +198,17 @@ export async function unblockDevice(deviceIdOrIp: string): Promise<void> {
 
   // Dispatch custom event
   window.dispatchEvent(new CustomEvent('app_security_blocked_update'));
+
+  // Sync to Backend Server
+  try {
+    fetch('/api/security/unblock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: deviceIdOrIp }),
+    }).catch(() => {});
+  } catch {
+    // ignore
+  }
 
   // Update Firestore
   if (isFirebaseConfigured && db) {
@@ -178,6 +228,30 @@ export function subscribeToBlockedDevices(
   // Initial fire from local
   callback(getLocalBlockedDevices());
 
+  // Fetch from server backend API
+  const fetchServerBlocked = async () => {
+    try {
+      const res = await fetch('/api/security/blocked');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.devices && Array.isArray(data.devices)) {
+          const merged = [...data.devices];
+          const local = getLocalBlockedDevices();
+          local.forEach((l) => {
+            if (!merged.some((m) => m.id === l.id || m.deviceId === l.deviceId)) {
+              merged.push(l);
+            }
+          });
+          saveLocalBlockedDevices(merged);
+          callback(merged);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  };
+  fetchServerBlocked();
+
   let unsubscribeFirestore: (() => void) | null = null;
 
   if (isFirebaseConfigured && db) {
@@ -187,11 +261,15 @@ export function subscribeToBlockedDevices(
         colRef,
         (snapshot) => {
           const list: BlockedDevice[] = [];
-          snapshot.forEach((doc) => {
-            list.push(doc.data() as BlockedDevice);
+          snapshot.forEach((docSnap) => {
+            list.push(docSnap.data() as BlockedDevice);
           });
-          saveLocalBlockedDevices(list);
-          callback(list);
+          if (list.length > 0) {
+            saveLocalBlockedDevices(list);
+            callback(list);
+          } else {
+            callback(getLocalBlockedDevices());
+          }
         },
         (err) => {
           console.warn('Blocked devices subscription warning:', err);
@@ -210,10 +288,14 @@ export function subscribeToBlockedDevices(
   window.addEventListener('storage', handleLocalChange);
   window.addEventListener('app_security_blocked_update', handleLocalChange);
 
+  // Interval check every 5s for cross-device polling
+  const intervalId = setInterval(fetchServerBlocked, 5000);
+
   return () => {
     if (unsubscribeFirestore) unsubscribeFirestore();
     window.removeEventListener('storage', handleLocalChange);
     window.removeEventListener('app_security_blocked_update', handleLocalChange);
+    clearInterval(intervalId);
   };
 }
 

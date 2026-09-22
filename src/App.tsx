@@ -18,10 +18,13 @@ import { BannerFormModal } from './admin/BannerFormModal';
 import { CategoryManager } from './admin/CategoryManager';
 import { SettingsManager } from './admin/SettingsManager';
 import { LoginDetailsManager } from './admin/LoginDetailsManager';
+import { AdManager } from './admin/AdManager';
 import { BlockedScreen } from './components/BlockedScreen';
-import { getCurrentDeviceInfo } from './lib/deviceFingerprint';
+import { AdDisplaySlot } from './components/AdDisplaySlot';
+import { getCurrentDeviceInfo, checkServerBlockedStatus } from './lib/deviceFingerprint';
 import { subscribeToBlockedDevices, isDeviceBlockedCheck } from './lib/securityService';
-import { Product, Banner, DeviceInfo, BlockedDevice } from './types';
+import { subscribeToAds } from './lib/adService';
+import { Product, Banner, DeviceInfo, BlockedDevice, AdsterraAd } from './types';
 
 const MainAppContent: React.FC = () => {
   const { user } = useAuth();
@@ -42,6 +45,16 @@ const MainAppContent: React.FC = () => {
   const [adminTab, setAdminTab] = useState<AdminTab>('dashboard');
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
 
+  // Adsterra Ads state
+  const [ads, setAds] = useState<AdsterraAd[]>([]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToAds((list) => {
+      setAds(list);
+    });
+    return () => unsubscribe();
+  }, []);
+
   // Device blocking enforcement
   const [currentDevice, setCurrentDevice] = useState<DeviceInfo | null>(null);
   const [blockedRecord, setBlockedRecord] = useState<BlockedDevice | null>(null);
@@ -59,16 +72,34 @@ const MainAppContent: React.FC = () => {
   useEffect(() => {
     if (!currentDevice) return;
 
+    // 1. Subscribe to local and Firestore blocked devices
     const unsubscribe = subscribeToBlockedDevices((blockedList) => {
       const match = isDeviceBlockedCheck(
         currentDevice.deviceId,
         currentDevice.ip,
         blockedList
       );
-      setBlockedRecord(match);
+      if (match) {
+        setBlockedRecord(match);
+      } else {
+        setBlockedRecord(null);
+      }
     });
 
-    return () => unsubscribe();
+    // 2. Check server-side blocked status (ensures cross-device & cross-browser synchronization)
+    const checkServer = async () => {
+      const serverCheck = await checkServerBlockedStatus(currentDevice.deviceId);
+      if (serverCheck.isBlocked && serverCheck.matchedRecord) {
+        setBlockedRecord(serverCheck.matchedRecord);
+      }
+    };
+    checkServer();
+    const interval = setInterval(checkServer, 5000);
+
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+    };
   }, [currentDevice]);
 
   // Modals for admin creation/editing
@@ -140,6 +171,7 @@ const MainAppContent: React.FC = () => {
             onOpenEditModal={handleOpenEditBanner}
           />
         )}
+        {adminTab === 'ads' && <AdManager />}
         {adminTab === 'categories' && <CategoryManager />}
         {adminTab === 'settings' && <SettingsManager />}
         {adminTab === 'login-details' && <LoginDetailsManager />}
@@ -188,6 +220,9 @@ const MainAppContent: React.FC = () => {
         {/* Promotional / Offer Banner Carousel (Hides completely if empty) */}
         {!searchQuery && <BannerCarousel banners={activeBanners} />}
 
+        {/* Adsterra: After Banner Placement */}
+        {!searchQuery && <AdDisplaySlot placement="after_banner" allAds={ads} />}
+
         {/* Category Filter Pills */}
         <CategoryFilter
           categories={categories}
@@ -200,7 +235,7 @@ const MainAppContent: React.FC = () => {
           <FeaturedProducts products={publicProducts} />
         )}
 
-        {/* Product Catalog Listing */}
+        {/* Product Catalog Listing with configurable Ad placements */}
         <section aria-label="Product Catalog">
           <div className="flex items-center justify-between mb-3.5">
             <div>
@@ -217,9 +252,10 @@ const MainAppContent: React.FC = () => {
             </div>
           </div>
 
-          {/* 2-column mobile grid, 3 on tablet, 4-6 on desktop */}
+          {/* 2-column mobile grid, 3 on tablet, 4-6 on desktop with mid-grid Ads */}
           <ProductGrid
             products={publicProducts}
+            ads={ads}
             loading={loading}
             onResetFilters={() => {
               setSearchQuery('');
@@ -227,6 +263,9 @@ const MainAppContent: React.FC = () => {
             }}
           />
         </section>
+
+        {/* Adsterra: Before Footer Placement */}
+        <AdDisplaySlot placement="before_footer" allAds={ads} />
       </main>
 
       {/* Discreet Sign In Modal */}
