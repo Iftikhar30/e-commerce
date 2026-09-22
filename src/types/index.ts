@@ -4,7 +4,8 @@ export interface Product {
   id: string;
   title: string;
   image: string;
-  amazonUrl: string;
+  amazonUrl?: string;
+  affiliateUrl?: string; // Optional custom affiliate URL for user redirection
   asin?: string;
   price?: number;
   originalPrice?: number;
@@ -56,4 +57,37 @@ export interface UserAuth {
   uid: string;
   email: string | null;
   isAdmin: boolean;
+}
+
+export interface DeviceInfo {
+  deviceId: string;
+  ip?: string;
+  browser: string;
+  os: string;
+  deviceType: 'Desktop' | 'Mobile' | 'Tablet';
+  userAgent: string;
+  city?: string;
+  country?: string;
+  screenResolution?: string;
+}
+
+export interface LoginLog {
+  id: string;
+  email: string;
+  status: 'success' | 'failed';
+  reason?: string;
+  device: DeviceInfo;
+  timestamp: string;
+}
+
+export interface BlockedDevice {
+  id: string; // matches deviceId or IP
+  deviceId: string;
+  ip?: string;
+  browser?: string;
+  os?: string;
+  deviceType?: string;
+  reason?: string;
+  blockedAt: string;
+  blockedBy?: string;
 }

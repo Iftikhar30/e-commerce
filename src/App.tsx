@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { StoreProvider, useStore } from './context/StoreContext';
 import { Header } from './components/Header';
@@ -17,7 +17,11 @@ import { BannerManager } from './admin/BannerManager';
 import { BannerFormModal } from './admin/BannerFormModal';
 import { CategoryManager } from './admin/CategoryManager';
 import { SettingsManager } from './admin/SettingsManager';
-import { Product, Banner } from './types';
+import { LoginDetailsManager } from './admin/LoginDetailsManager';
+import { BlockedScreen } from './components/BlockedScreen';
+import { getCurrentDeviceInfo } from './lib/deviceFingerprint';
+import { subscribeToBlockedDevices, isDeviceBlockedCheck } from './lib/securityService';
+import { Product, Banner, DeviceInfo, BlockedDevice } from './types';
 
 const MainAppContent: React.FC = () => {
   const { user } = useAuth();
@@ -31,11 +35,41 @@ const MainAppContent: React.FC = () => {
     setSearchQuery,
     loading,
     toastMessage,
+    settings,
   } = useStore();
 
   const [isAdminView, setIsAdminView] = useState<boolean>(false);
   const [adminTab, setAdminTab] = useState<AdminTab>('dashboard');
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
+
+  // Device blocking enforcement
+  const [currentDevice, setCurrentDevice] = useState<DeviceInfo | null>(null);
+  const [blockedRecord, setBlockedRecord] = useState<BlockedDevice | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    getCurrentDeviceInfo().then((dev) => {
+      if (mounted) setCurrentDevice(dev);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!currentDevice) return;
+
+    const unsubscribe = subscribeToBlockedDevices((blockedList) => {
+      const match = isDeviceBlockedCheck(
+        currentDevice.deviceId,
+        currentDevice.ip,
+        blockedList
+      );
+      setBlockedRecord(match);
+    });
+
+    return () => unsubscribe();
+  }, [currentDevice]);
 
   // Modals for admin creation/editing
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
@@ -63,6 +97,22 @@ const MainAppContent: React.FC = () => {
     setEditingBanner(ban);
     setIsBannerModalOpen(true);
   };
+
+  // If this device is blocked by administrator, halt all access and show BlockedScreen
+  if (blockedRecord) {
+    return (
+      <BlockedScreen
+        blockedInfo={blockedRecord}
+        deviceInfo={currentDevice}
+        onRefresh={() => {
+          getCurrentDeviceInfo().then((dev) => {
+            setCurrentDevice(dev);
+          });
+        }}
+        contactEmail={settings?.contactEmail}
+      />
+    );
+  }
 
   // If user is logged in as admin and viewing admin console
   if (user?.isAdmin && isAdminView) {
@@ -92,6 +142,7 @@ const MainAppContent: React.FC = () => {
         )}
         {adminTab === 'categories' && <CategoryManager />}
         {adminTab === 'settings' && <SettingsManager />}
+        {adminTab === 'login-details' && <LoginDetailsManager />}
 
         {/* Admin Modals */}
         <ProductFormModal

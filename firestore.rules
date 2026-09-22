@@ -24,6 +24,7 @@ service cloud.firestore {
       allow read: if true;
       allow create, delete: if isAdmin() && isValidId(productId);
       allow update: if isAdmin() || (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clickCount']) ||
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clickCount', 'updatedAt'])
       );
     }
@@ -44,6 +45,18 @@ service cloud.firestore {
     match /settings/{settingId} {
       allow read: if true;
       allow write: if isAdmin();
+    }
+
+    // Blocked devices collection: public read so blocked devices can be immediately identified, write by admin
+    match /blocked_devices/{deviceId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Login logs collection: create allowed for recording login attempts, read/update/delete by admin
+    match /login_logs/{logId} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
     }
 
     // Admin authorization whitelist

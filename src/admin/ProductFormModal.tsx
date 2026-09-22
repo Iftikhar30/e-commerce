@@ -5,6 +5,7 @@ import {
   extractAsinFromAmazonUrl,
   extractTitleFromAmazonUrl,
   cleanAmazonUrl,
+  isAmazonShortUrl,
 } from '../lib/firestoreService';
 import {
   X,
@@ -35,6 +36,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
   const [title, setTitle] = useState('');
   const [amazonUrl, setAmazonUrl] = useState('');
+  const [affiliateUrl, setAffiliateUrl] = useState('');
   const [asin, setAsin] = useState('');
   const [image, setImage] = useState('');
   const [availableImages, setAvailableImages] = useState<string[]>([]);
@@ -62,7 +64,8 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   useEffect(() => {
     if (productToEdit) {
       setTitle(productToEdit.title);
-      setAmazonUrl(productToEdit.amazonUrl);
+      setAmazonUrl(productToEdit.amazonUrl || '');
+      setAffiliateUrl(productToEdit.affiliateUrl || '');
       setAsin(productToEdit.asin || '');
       setImage(productToEdit.image);
       setAvailableImages(productToEdit.image ? [productToEdit.image] : []);
@@ -86,6 +89,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     } else {
       setTitle('');
       setAmazonUrl('');
+      setAffiliateUrl('');
       setAsin('');
       setImage('');
       setAvailableImages([]);
@@ -229,7 +233,12 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           setImage(data.images[0]);
         }
 
-        setFetchSuccessMessage('All details & high-res images auto-filled!');
+        // If the fetched URL is an affiliate shortlink or has affiliate tag and affiliateUrl is empty, preserve it
+        if (!affiliateUrl.trim() && (urlToFetch.includes('a.co') || urlToFetch.includes('amzn.to') || urlToFetch.includes('tag='))) {
+          setAffiliateUrl(urlToFetch.trim());
+        }
+
+        setFetchSuccessMessage('প্রডাক্টের সঠিক নাম, মূল্য, রেটিং ও ছবি সফলভাবে লোড হয়েছে!');
         setTimeout(() => setFetchSuccessMessage(null), 5000);
       } else {
         // Fallback: extract ASIN and title from URL
@@ -281,8 +290,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
   const handleAmazonUrlChange = (val: string) => {
     setAmazonUrl(val);
-    const extracted = extractAsinFromAmazonUrl(val);
-    const titleFromUrl = extractTitleFromAmazonUrl(val);
+    const trimmed = val.trim();
+    const extracted = extractAsinFromAmazonUrl(trimmed);
+    const titleFromUrl = extractTitleFromAmazonUrl(trimmed);
     if (titleFromUrl && !title) {
       setTitle(titleFromUrl);
     }
@@ -299,30 +309,42 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         if (!image) setImage(canonical);
       }
     }
+
+    // If a full or short URL is pasted or entered, automatically trigger details extraction
+    if (
+      trimmed.startsWith('http') &&
+      (isAmazonShortUrl(trimmed) || trimmed.includes('amazon.') || trimmed.includes('/dp/')) &&
+      trimmed.length >= 14 &&
+      !productToEdit
+    ) {
+      autoFetchProductDetails(trimmed);
+    }
   };
 
   const handleAmazonUrlBlur = () => {
-    if (amazonUrl.trim() && !productToEdit) {
+    if (amazonUrl.trim() && !productToEdit && !isAutoFetching) {
       autoFetchProductDetails(amazonUrl.trim());
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !amazonUrl.trim() || !image.trim()) {
-      alert('Please fill in required fields (Title, Amazon URL, and Image)');
+    if (!title.trim() || !image.trim()) {
+      alert('অনুগ্রহ করে Title এবং Image প্রদান করুন (টাইটেল এবং ছবি আবশ্যক)');
       return;
     }
 
     setLoading(true);
     try {
+      const finalUrl = amazonUrl.trim();
       await saveProductAction({
         ...(productToEdit
           ? { id: productToEdit.id, clickCount: productToEdit.clickCount, order: productToEdit.order }
           : {}),
         title: title.trim(),
-        amazonUrl: cleanAmazonUrl(amazonUrl.trim()),
-        asin: asin.trim() || (extractAsinFromAmazonUrl(amazonUrl.trim()) ?? undefined),
+        amazonUrl: finalUrl || undefined,
+        affiliateUrl: affiliateUrl.trim() || undefined,
+        asin: asin.trim() || (finalUrl ? extractAsinFromAmazonUrl(finalUrl) ?? undefined : undefined),
         image: image.trim(),
         price: price ? parseFloat(price) : undefined,
         originalPrice: originalPrice ? parseFloat(originalPrice) : undefined,
@@ -378,11 +400,12 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Amazon URL Field with Auto-Fetch Button */}
+          {/* 1. Amazon Product URL Field with Auto-Fetch Button */}
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-bold text-neutral-700">
-                Amazon Product / Affiliate URL <span className="text-rose-500">*</span>
+              <label className="block text-xs font-bold text-neutral-800">
+                Amazon Product URL
+                <span className="text-[11px] font-normal text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded ml-2">ঐচ্ছিক (ডাটা ফেচ করার লিংক)</span>
               </label>
               <button
                 type="button"
@@ -403,11 +426,10 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
             <div className="relative">
               <input
                 type="url"
-                required
                 value={amazonUrl}
                 onChange={(e) => handleAmazonUrlChange(e.target.value)}
                 onBlur={handleAmazonUrlBlur}
-                placeholder="https://www.amazon.com/dp/B08XYZ1234?tag=yourtag-20"
+                placeholder="https://a.co/d/... or https://www.amazon.com/dp/B0... (ঐচ্ছিক)"
                 className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-900 focus:bg-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 pr-10"
               />
               {isAutoFetching && (
@@ -424,7 +446,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 </span>
               ) : (
                 <span className="text-[10.5px] text-neutral-400">
-                  Tip: Paste any Amazon or amzn.to link and details will fill automatically
+                  টিপস: ডাটা অটো-ফেচ করতে চাইলে লিংক দিতে পারেন (ঐচ্ছিক), অথবা সরাসরি নিচে টাইটেল ও ছবি দিয়েও সেইভ করতে পারবেন
                 </span>
               )}
               {fetchSuccessMessage && (
@@ -433,6 +455,34 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 </span>
               )}
             </div>
+          </div>
+
+          {/* 2. Affiliate URL (Optional) - User Redirection Destination (No data fetching) */}
+          <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200/80">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="flex items-center gap-1.5 text-xs font-bold text-amber-950">
+                <LinkIcon size={13} className="text-amber-700" />
+                <span>Affiliate URL</span>
+                <span className="text-[11px] font-medium text-amber-800/80">(ঐচ্ছিক / Optional)</span>
+              </label>
+              <span className="text-[10px] bg-amber-200/70 text-amber-900 font-semibold px-2 py-0.5 rounded-full">
+                User Click Destination
+              </span>
+            </div>
+
+            <div className="relative">
+              <input
+                type="url"
+                value={affiliateUrl}
+                onChange={(e) => setAffiliateUrl(e.target.value)}
+                placeholder="https://amzn.to/... or https://a.co/... or your affiliate tag URL"
+                className="w-full px-3 py-2 text-xs bg-white border border-amber-300/80 rounded-lg text-neutral-900 focus:bg-white focus:border-amber-600 focus:ring-1 focus:ring-amber-600 placeholder:text-neutral-400"
+              />
+            </div>
+
+            <p className="text-[11px] text-amber-900/80 mt-1.5 leading-snug">
+              💡 <strong>কীভাবে কাজ করবে:</strong> ইউজার প্রডাক্টে ক্লিক করলে এই Affiliate লিংকে নিয়ে যাওয়া হবে। খালি থাকলে স্বয়ংক্রিয়ভাবে উপরের মূল Amazon Product লিংকে নিয়ে যাবে (এই লিংক থেকে কোনো ডাটা ফেচ করা হবে না)।
+            </p>
           </div>
 
           {/* Title Field */}

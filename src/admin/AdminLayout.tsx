@@ -15,9 +15,10 @@ import {
   Cloud,
   CloudOff,
   AlertTriangle,
+  ShieldCheck,
 } from 'lucide-react';
 
-export type AdminTab = 'dashboard' | 'products' | 'banners' | 'categories' | 'settings';
+export type AdminTab = 'dashboard' | 'products' | 'banners' | 'categories' | 'settings' | 'login-details';
 
 interface AdminLayoutProps {
   currentTab: AdminTab;
@@ -42,6 +43,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     { id: 'banners' as AdminTab, label: 'Offers & Banners', icon: ImageIcon },
     { id: 'categories' as AdminTab, label: 'Categories', icon: Tag },
     { id: 'settings' as AdminTab, label: 'Settings', icon: SettingsIcon },
+    { id: 'login-details' as AdminTab, label: 'Login Details', icon: ShieldCheck },
   ];
 
   const handleTabClick = (tab: AdminTab) => {

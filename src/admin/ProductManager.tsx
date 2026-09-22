@@ -17,6 +17,7 @@ import {
   ChevronUp,
   ChevronDown,
   Filter,
+  Link as LinkIcon,
 } from 'lucide-react';
 
 interface ProductManagerProps {
@@ -306,6 +307,17 @@ export const ProductManager: React.FC<ProductManagerProps> = ({
                           <>
                             <span>•</span>
                             <span className="font-mono text-neutral-400">ASIN: {product.asin}</span>
+                          </>
+                        )}
+                        {product.affiliateUrl && (
+                          <>
+                            <span>•</span>
+                            <span
+                              className="text-amber-700 bg-amber-50 border border-amber-200/80 font-medium px-1.5 py-0.5 rounded flex items-center gap-1 text-[10px]"
+                              title={`Affiliate Redirect: ${product.affiliateUrl}`}
+                            >
+                              <LinkIcon size={10} className="text-amber-600" /> Affiliate Link Set
+                            </span>
                           </>
                         )}
                       </div>

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { X, Lock, Mail, AlertCircle, Loader2 } from 'lucide-react';
+import { getCurrentDeviceInfo } from '../lib/deviceFingerprint';
+import { recordLoginAttempt } from '../lib/securityService';
 
 interface AdminLoginModalProps {
   isOpen: boolean;
@@ -27,10 +29,35 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
     setLoading(true);
 
     try {
-      await login(email, password);
-      setLoading(false);
-      onSuccess();
-      onClose();
+      const deviceInfo = await getCurrentDeviceInfo();
+      try {
+        await login(email, password);
+        // Record successful login
+        recordLoginAttempt({
+          email: email.trim(),
+          status: 'success',
+          device: deviceInfo,
+        }).catch(() => {});
+
+        setLoading(false);
+        onSuccess();
+        onClose();
+      } catch (authErr: unknown) {
+        const failureReason =
+          authErr instanceof Error
+            ? authErr.message
+            : 'Wrong password or authentication failed / ভুল পাসওয়ার্ড';
+
+        // Record failed attempt (wrong password or not found)
+        recordLoginAttempt({
+          email: email.trim(),
+          status: 'failed',
+          reason: failureReason,
+          device: deviceInfo,
+        }).catch(() => {});
+
+        throw authErr;
+      }
     } catch (err: unknown) {
       setLoading(false);
       setErrorMessage(

@@ -112,25 +112,24 @@ purgeDemoData().catch(() => {});
 // ----------------------------------------------------
 
 export async function recordProductClick(productId: string): Promise<void> {
-  if (isFirebaseConfigured && db) {
-    try {
-      const productRef = doc(db, 'products', productId);
-      await updateDoc(productRef, {
-        clickCount: increment(1),
-        updatedAt: new Date().toISOString(),
-      });
-      return;
-    } catch (err) {
-      console.error('Firestore clickCount increment error, updating locally:', err);
-    }
-  }
-
-  // Local fallback
+  // Always update local cache immediately for instant UI feedback
   const products = getLocalProducts();
   const updated = products.map((p) =>
     p.id === productId ? { ...p, clickCount: (p.clickCount || 0) + 1 } : p
   );
   setLocalData(LOCAL_PRODUCTS_KEY, updated);
+
+  if (isFirebaseConfigured && db) {
+    try {
+      const productRef = doc(db, 'products', productId);
+      await updateDoc(productRef, {
+        clickCount: increment(1),
+      });
+    } catch {
+      // Gracefully fall back to local count if unauthenticated visitor writes
+      // are restricted in Cloud Firestore rules, preventing disruptive console errors
+    }
+  }
 }
 
 export function subscribeProducts(
@@ -221,6 +220,7 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
     title: product.title || '',
     image: product.image || '',
     amazonUrl: product.amazonUrl || '',
+    ...(product.affiliateUrl !== undefined ? { affiliateUrl: product.affiliateUrl.trim() } : {}),
     ...(product.asin ? { asin: product.asin } : {}),
     ...(product.price !== undefined && !isNaN(product.price) ? { price: product.price } : {}),
     ...(product.originalPrice !== undefined && !isNaN(product.originalPrice) ? { originalPrice: product.originalPrice } : {}),
@@ -619,9 +619,23 @@ export async function saveSettings(settings: StoreSettings): Promise<void> {
 // AMAZON URL PARSER HELPER
 // ----------------------------------------------------
 
+export function isAmazonShortUrl(url: string): boolean {
+  if (!url) return false;
+  return /^(?:https?:\/\/)?(?:a\.co|amzn\.to|amzn\.eu|amzn\.in|amzn\.asia|t\.co|bit\.ly|tinyurl\.com|rb\.gy)\//i.test(
+    url.trim()
+  );
+}
+
 export function extractAsinFromAmazonUrl(url: string): string | null {
   if (!url) return null;
-  const match = url.match(/(?:\/dp\/|\/gp\/product\/|\/exec\/obidos\/asin\/|\/d\/|ASIN=|\/)([A-Z0-9]{10})(?:[/?&#]|$)/i);
+  const trimmed = url.trim();
+  if (isAmazonShortUrl(trimmed)) {
+    return null;
+  }
+  const match =
+    trimmed.match(
+      /(?:\/dp\/|\/gp\/product\/|\/exec\/obidos\/asin\/|\/gp\/aw\/d\/|[?&]asin=|\/product\/)([A-Z0-9]{10})(?:[/?&#]|$)/i
+    ) || trimmed.match(/amazon\.[a-z.]+\/.*?\/([A-Z0-9]{10})(?:[/?&#]|$)/i);
   return match ? match[1].toUpperCase() : null;
 }
 

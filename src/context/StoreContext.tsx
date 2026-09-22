@@ -130,9 +130,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, [isAdmin]);
 
-  // Handle Amazon Redirect & Click Track
+  // Handle Product Redirection & Click Tracking
   const onProductClick = (product: Product) => {
-    if (!product.amazonUrl) return;
+    // If affiliateUrl is specified and non-empty, redirect to it; otherwise fallback to main amazonUrl
+    const targetUrl = product.affiliateUrl?.trim() || product.amazonUrl?.trim();
+    if (!targetUrl) return;
 
     // Fire-and-forget atomic click tracking
     recordProductClick(product.id).catch((err) =>
@@ -144,8 +146,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       prev.map((p) => (p.id === product.id ? { ...p, clickCount: (p.clickCount || 0) + 1 } : p))
     );
 
-    // Safe Amazon redirection with noopener, noreferrer
-    window.open(product.amazonUrl, '_blank', 'noopener,noreferrer');
+    // Safe redirection with noopener, noreferrer
+    window.open(targetUrl, '_blank', 'noopener,noreferrer');
   };
 
   // Filter public products: ONLY active === true
