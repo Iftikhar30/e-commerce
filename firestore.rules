@@ -2,71 +2,59 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Helper functions
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isAdmin() {
-      return isSignedIn();
-    }
-
-    function isValidId(id) {
-      return id is string && id.size() <= 128;
-    }
-
-    // Default deny all
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // Products collection: Public can read all active products, Admins have full access
+    // Products: কাস্টমাররা প্রোডাক্ট দেখতে পারবেন, অ্যাডমিন যুক্ত/এডিট করতে পারবেন এবং ক্লিক কাউন্ট আপডেট হতে পারবে
     match /products/{productId} {
       allow read: if true;
-      allow create, delete: if isAdmin() && isValidId(productId);
-      allow update: if isAdmin() || (
+      allow write: if isSignedIn() || (
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clickCount']) ||
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clickCount', 'updatedAt'])
       );
     }
 
-    // Banners collection
+    // Banners: ব্যানার সবাই দেখতে পারবে, অ্যাডমিন পরিবর্তন করতে পারবে
     match /banners/{bannerId} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow write: if isSignedIn();
     }
 
-    // Categories collection
+    // Categories: ক্যাটাগরি সবাই দেখতে পারবে, অ্যাডমিন পরিবর্তন করতে পারবে
     match /categories/{categoryId} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow write: if isSignedIn();
     }
 
-    // Settings collection
+    // Settings: স্টোর সেটিংস সবাই পড়তে পারবে, অ্যাডমিন সেভ করতে পারবে
     match /settings/{settingId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isSignedIn();
     }
 
-    // Ads collection: Public can read active ads, Admins have full access
+    // Ads: বিজ্ঞাপন ও পপআপ ব্যানার
     match /ads/{adId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isSignedIn();
     }
 
-    // Blocked devices collection: public read so blocked devices can be immediately identified, write by admin or security service
-    match /blocked_devices/{deviceId} {
-      allow read, write: if true;
-    }
-
-    // Login logs collection: create and read allowed for recording and reviewing login attempts
+    // Login Logs: সব ডিভাইস ও ব্রাউজার থেকে লগইন ট্র্যাকিং রেকর্ড ও লাইভ মনিটরিং
     match /login_logs/{logId} {
       allow read, write: if true;
     }
 
-    // Admin authorization whitelist
+    // Blocked Devices: ব্লকড ডিভাইস তালিকা চেক করা এবং অ্যাডমিন প্যানেল থেকে ব্লক/আনব্লক করা
+    match /blocked_devices/{deviceId} {
+      allow read, write: if true;
+    }
+
+    // Admin whitelist
     match /admins/{uid} {
-      allow read, write: if isAdmin();
+      allow read, write: if isSignedIn();
     }
   }
 }
+
 
