@@ -11,7 +11,8 @@ import {
 import { db, isFirebaseConfigured } from './firebase';
 import { AdsterraAd } from '../types';
 
-const LOCAL_ADS_KEY = 'app_adsterra_ads_storage';
+const LOCAL_ADS_KEY = 'app_adsterra_ads_storage_v2';
+const ADS_INITIALIZED_KEY = 'app_adsterra_ads_initialized_flag';
 
 export const INITIAL_DEFAULT_ADS: AdsterraAd[] = [
   {
@@ -88,21 +89,30 @@ export const INITIAL_DEFAULT_ADS: AdsterraAd[] = [
 export function getLocalAds(): AdsterraAd[] {
   try {
     const raw = localStorage.getItem(LOCAL_ADS_KEY);
-    if (raw) {
+    if (raw !== null) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         return parsed;
       }
     }
-    return INITIAL_DEFAULT_ADS;
+
+    const isInitialized = localStorage.getItem(ADS_INITIALIZED_KEY);
+    if (!isInitialized) {
+      localStorage.setItem(ADS_INITIALIZED_KEY, 'true');
+      localStorage.setItem(LOCAL_ADS_KEY, JSON.stringify(INITIAL_DEFAULT_ADS));
+      return INITIAL_DEFAULT_ADS;
+    }
+
+    return [];
   } catch {
-    return INITIAL_DEFAULT_ADS;
+    return [];
   }
 }
 
 export function saveLocalAds(ads: AdsterraAd[]) {
   try {
     localStorage.setItem(LOCAL_ADS_KEY, JSON.stringify(ads));
+    localStorage.setItem(ADS_INITIALIZED_KEY, 'true');
     window.dispatchEvent(new CustomEvent('app_adsterra_ads_updated'));
   } catch {
     // ignore
@@ -110,7 +120,7 @@ export function saveLocalAds(ads: AdsterraAd[]) {
 }
 
 export async function saveAd(ad: AdsterraAd): Promise<void> {
-  // Update local storage
+  // 1. Update local storage
   const current = getLocalAds();
   const index = current.findIndex((a) => a.id === ad.id);
   const now = new Date().toISOString();
@@ -126,7 +136,18 @@ export async function saveAd(ad: AdsterraAd): Promise<void> {
 
   saveLocalAds(updatedList);
 
-  // Sync to Firestore
+  // 2. Sync to Backend Server for instant cross-device distribution
+  try {
+    fetch('/api/ads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedAd),
+    }).catch(() => {});
+  } catch {
+    // ignore
+  }
+
+  // 3. Sync to Firestore
   if (isFirebaseConfigured && db) {
     try {
       const docRef = doc(db, 'ads', ad.id);
@@ -138,10 +159,23 @@ export async function saveAd(ad: AdsterraAd): Promise<void> {
 }
 
 export async function deleteAd(adId: string): Promise<void> {
+  // 1. Immediately update local storage
   const current = getLocalAds();
   const updatedList = current.filter((a) => a.id !== adId);
   saveLocalAds(updatedList);
 
+  // 2. Delete on backend server so it never comes back from any device
+  try {
+    fetch('/api/ads/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: adId }),
+    }).catch(() => {});
+  } catch {
+    // ignore
+  }
+
+  // 3. Delete in Firestore
   if (isFirebaseConfigured && db) {
     try {
       const docRef = doc(db, 'ads', adId);
@@ -161,6 +195,17 @@ export async function toggleAdActive(adId: string, active: boolean): Promise<voi
     saveLocalAds(updated);
   }
 
+  // Sync to server
+  try {
+    fetch(`/api/ads/${adId}/toggle`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active }),
+    }).catch(() => {});
+  } catch {
+    // ignore
+  }
+
   if (isFirebaseConfigured && db) {
     try {
       const docRef = doc(db, 'ads', adId);
@@ -172,8 +217,27 @@ export async function toggleAdActive(adId: string, active: boolean): Promise<voi
 }
 
 export function subscribeToAds(callback: (ads: AdsterraAd[]) => void): () => void {
-  // Fire initial local ads
+  // 1. Initial fire from local storage
   callback(getLocalAds());
+
+  // 2. Fetch latest ads from backend server
+  const fetchServerAds = async () => {
+    try {
+      const res = await fetch('/api/ads');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ads && Array.isArray(data.ads)) {
+          saveLocalAds(data.ads);
+          callback(data.ads);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  fetchServerAds();
+  const intervalId = setInterval(fetchServerAds, 4000);
 
   let unsubscribeFirestore: (() => void) | null = null;
 
@@ -191,17 +255,14 @@ export function subscribeToAds(callback: (ads: AdsterraAd[]) => void): () => voi
           if (list.length > 0) {
             saveLocalAds(list);
             callback(list);
-          } else {
-            callback(getLocalAds());
           }
         },
         (err) => {
           console.warn('Firestore ads subscription warning:', err);
-          callback(getLocalAds());
         }
       );
     } catch {
-      callback(getLocalAds());
+      // ignore
     }
   }
 
@@ -213,8 +274,10 @@ export function subscribeToAds(callback: (ads: AdsterraAd[]) => void): () => voi
   window.addEventListener('app_adsterra_ads_updated', handleLocalUpdate);
 
   return () => {
+    clearInterval(intervalId);
     if (unsubscribeFirestore) unsubscribeFirestore();
     window.removeEventListener('storage', handleLocalUpdate);
     window.removeEventListener('app_adsterra_ads_updated', handleLocalUpdate);
   };
 }
+

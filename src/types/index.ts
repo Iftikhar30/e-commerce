@@ -22,12 +22,19 @@ export interface Product {
   updatedAt?: string;
 }
 
+export type BannerType = 'image' | 'ad';
+
 export interface Banner {
   id: string;
-  image: string;
+  type?: BannerType; // 'image' | 'ad'
+  image?: string;
   title?: string;
   link?: string;
   isAd: boolean;
+  adCode?: string; // Adsterra JavaScript or iframe snippet for Banner Ad
+  adSize?: AdSize; // '320x50' | '300x250' | '728x90' | 'custom'
+  customWidth?: number;
+  customHeight?: number;
   active: boolean;
   order: number;
   startDate?: string;

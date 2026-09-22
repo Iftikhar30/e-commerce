@@ -11,7 +11,9 @@ import {
   ExternalLink,
   ChevronUp,
   ChevronDown,
-  GripVertical,
+  Tv,
+  Image as ImageIcon,
+  Code2,
 } from 'lucide-react';
 
 interface BannerManagerProps {
@@ -79,150 +81,172 @@ export const BannerManager: React.FC<BannerManagerProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-neutral-200/90 shadow-2xs">
         <div>
           <h2 className="text-xl font-bold text-neutral-900 tracking-tight">
-            Promotional Banners & Ads
+            অফার ব্যানার ও স্পন্সর Ad (Promotional Banners & Ads)
           </h2>
           <p className="text-xs text-neutral-500">
-            Manage top carousel banners, seasonal discount promotions, and sponsor ads
+            হোমপেজের টপ স্লাইডার ব্যানার, অফার গ্রাফিক্স এবং Adsterra বিজ্ঞাপন পরিচালনা করুন
           </p>
         </div>
         <button
           type="button"
           onClick={onOpenAddModal}
-          className="inline-flex items-center gap-1.5 px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold transition-colors shadow-xs shrink-0"
+          className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-amber-400 hover:bg-amber-500 text-neutral-950 rounded-xl text-xs font-bold transition-colors shadow-xs shrink-0 cursor-pointer"
         >
-          <Plus size={15} />
-          <span>Add Banner</span>
+          <Plus size={16} className="stroke-[2.5]" />
+          <span>নতুন ব্যানার / Ad যোগ করুন</span>
         </button>
       </div>
 
       <div className="bg-white rounded-2xl border border-neutral-200/90 shadow-2xs overflow-hidden">
         {allBanners.length === 0 ? (
           <div className="text-center py-12 px-4 text-xs text-neutral-500">
-            No promotional banners yet. Click "Add Banner" to showcase special deals.
+            এখনও কোনো অফার ব্যানার বা বিজ্ঞাপন যোগ করা হয়নি। "নতুন ব্যানার / Ad যোগ করুন" বাটনে ক্লিক করুন।
           </div>
         ) : (
           <div className="divide-y divide-neutral-100">
-            {allBanners.map((banner, index) => (
-              <div
-                key={banner.id}
-                className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-neutral-50/70 transition-colors"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="flex sm:flex-col items-center gap-0.5 text-neutral-400">
-                    <button
-                      type="button"
-                      onClick={() => moveUp(index)}
-                      disabled={index === 0}
-                      className="p-1 hover:text-neutral-800 disabled:opacity-30"
-                    >
-                      <ChevronUp size={15} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => moveDown(index)}
-                      disabled={index === allBanners.length - 1}
-                      className="p-1 hover:text-neutral-800 disabled:opacity-30"
-                    >
-                      <ChevronDown size={15} />
-                    </button>
-                  </div>
+            {allBanners.map((banner, index) => {
+              const isScriptAd = banner.type === 'ad' || Boolean(banner.adCode);
 
-                  <img
-                    src={banner.image}
-                    alt={banner.title || 'Banner'}
-                    className="w-24 h-14 object-cover rounded-xl border border-neutral-200 shrink-0"
-                  />
-
-                  <div className="min-w-0">
-                    <h4 className="text-xs sm:text-sm font-bold text-neutral-900 truncate">
-                      {banner.title || 'Untitled Banner Graphic'}
-                    </h4>
-                    <div className="flex items-center gap-2 text-[11px] text-neutral-500 mt-1 flex-wrap">
-                      <span
-                        className={`font-semibold ${
-                          banner.active ? 'text-emerald-600' : 'text-neutral-400'
-                        }`}
+              return (
+                <div
+                  key={banner.id}
+                  className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-neutral-50/70 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex sm:flex-col items-center gap-0.5 text-neutral-400">
+                      <button
+                        type="button"
+                        onClick={() => moveUp(index)}
+                        disabled={index === 0}
+                        className="p-1 hover:text-neutral-800 disabled:opacity-30 cursor-pointer"
+                        title="উপরে নিন"
                       >
-                        {banner.active ? 'Active' : 'Hidden'}
-                      </span>
-                      {banner.isAd && (
-                        <>
-                          <span>•</span>
-                          <span className="text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded font-bold uppercase text-[9px]">
-                            Advertisement Mode
+                        <ChevronUp size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveDown(index)}
+                        disabled={index === allBanners.length - 1}
+                        className="p-1 hover:text-neutral-800 disabled:opacity-30 cursor-pointer"
+                        title="নিচে নিন"
+                      >
+                        <ChevronDown size={15} />
+                      </button>
+                    </div>
+
+                    {isScriptAd ? (
+                      <div className="w-24 h-14 bg-neutral-900 rounded-xl border border-neutral-700 flex flex-col items-center justify-center text-amber-400 shrink-0 p-1">
+                        <Tv size={18} />
+                        <span className="text-[9px] font-mono font-bold mt-0.5">
+                          {banner.adSize === 'custom' && banner.customWidth
+                            ? `${banner.customWidth}x${banner.customHeight}`
+                            : banner.adSize || '300x250'}
+                        </span>
+                      </div>
+                    ) : (
+                      <img
+                        src={banner.image}
+                        alt={banner.title || 'Banner'}
+                        className="w-24 h-14 object-cover rounded-xl border border-neutral-200 shrink-0"
+                      />
+                    )}
+
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-xs sm:text-sm font-bold text-neutral-900 truncate">
+                          {banner.title || (isScriptAd ? 'Adsterra Script Banner' : 'ইমেজ ব্যানার')}
+                        </h4>
+                        {isScriptAd ? (
+                          <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-100 text-amber-900 rounded-md flex items-center gap-1">
+                            <Code2 size={11} /> Adsterra Ad ({banner.adSize || '300x250'})
                           </span>
-                        </>
-                      )}
-                      {banner.link ? (
-                        <>
-                          <span>•</span>
-                          <span className="text-neutral-400 truncate max-w-xs flex items-center gap-0.5">
-                            <ExternalLink size={10} /> {banner.link}
+                        ) : (
+                          <span className="text-[10px] font-medium px-2 py-0.5 bg-neutral-100 text-neutral-600 rounded-md flex items-center gap-1">
+                            <ImageIcon size={11} /> সাধারণ ব্যানার
                           </span>
-                        </>
-                      ) : (
-                        <>
-                          <span>•</span>
-                          <span className="text-neutral-400 italic">No link (visual only)</span>
-                        </>
-                      )}
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 text-[11px] text-neutral-500 flex-wrap">
+                        <span
+                          className={`font-semibold ${
+                            banner.active ? 'text-emerald-600' : 'text-neutral-400'
+                          }`}
+                        >
+                          {banner.active ? 'Active (লাইভ)' : 'Hidden (বন্ধ)'}
+                        </span>
+
+                        {banner.isAd && !isScriptAd && (
+                          <>
+                            <span>•</span>
+                            <span className="text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded font-bold uppercase text-[9px] border border-amber-200">
+                              AD Badge ON
+                            </span>
+                          </>
+                        )}
+
+                        {banner.link ? (
+                          <>
+                            <span>•</span>
+                            <span className="text-neutral-400 truncate max-w-xs flex items-center gap-0.5">
+                              <ExternalLink size={10} /> {banner.link}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span>•</span>
+                            <span className="text-neutral-400 italic">
+                              {isScriptAd ? 'Script based rendering' : 'No link'}
+                            </span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
+
+                  <div className="flex items-center justify-end gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => toggleBannerActive(banner)}
+                      title={banner.active ? 'Deactivate' : 'Activate'}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
+                        banner.active
+                          ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
+                          : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200'
+                      }`}
+                    >
+                      {banner.active ? 'Active' : 'Inactive'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onOpenEditModal(banner)}
+                      className="p-2 text-neutral-600 hover:text-neutral-950 hover:bg-neutral-100 rounded-xl transition-colors cursor-pointer"
+                      title="সম্পাদনা করুন"
+                    >
+                      <Edit2 size={15} />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setDeleteTarget(banner)}
+                      className="p-2 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+                      title="মুছে ফেলুন"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                 </div>
-
-                <div className="flex items-center justify-end gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => toggleBannerActive(banner)}
-                    title={banner.active ? 'Deactivate banner' : 'Activate banner'}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                      banner.active
-                        ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                        : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200'
-                    }`}
-                  >
-                    {banner.active ? 'Active' : 'Inactive'}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => toggleBannerAd(banner)}
-                    title="Toggle AD tag"
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                      banner.isAd
-                        ? 'bg-amber-100 text-amber-900'
-                        : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-                    }`}
-                  >
-                    {banner.isAd ? 'Ad: ON' : 'Ad: OFF'}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => onOpenEditModal(banner)}
-                    className="p-1.5 text-neutral-600 hover:text-neutral-950 hover:bg-neutral-100 rounded-lg transition-colors"
-                  >
-                    <Edit2 size={14} />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setDeleteTarget(banner)}
-                    className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
       <DeleteConfirmModal
         isOpen={Boolean(deleteTarget)}
-        title="Delete Banner"
-        message="Are you sure you want to delete this promotional banner?"
+        title="ব্যানার মুছে ফেলুন"
+        message="আপনি কি নিশ্চিত যে এই অফার ব্যানার বা বিজ্ঞাপনটি মুছে ফেলতে চান?"
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}
         loading={isDeleting}
@@ -230,3 +254,4 @@ export const BannerManager: React.FC<BannerManagerProps> = ({
     </div>
   );
 };
+

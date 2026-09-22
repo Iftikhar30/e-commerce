@@ -78,7 +78,7 @@ export const CategoryManager: React.FC = () => {
           <input
             type="text"
             required
-            value={newCatName}
+            value={newCatName ?? ''}
             onChange={(e) => setNewCatName(e.target.value)}
             placeholder="e.g. Smart Home, Wearables, Gaming..."
             className="flex-1 px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:bg-white focus:border-amber-500"
@@ -113,7 +113,7 @@ export const CategoryManager: React.FC = () => {
                     <div className="flex items-center gap-2 flex-1 max-w-sm">
                       <input
                         type="text"
-                        value={editingName}
+                        value={editingName ?? ''}
                         onChange={(e) => setEditingName(e.target.value)}
                         className="w-full px-2.5 py-1 text-xs border border-amber-400 rounded-lg focus:outline-hidden"
                         autoFocus

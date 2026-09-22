@@ -163,7 +163,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({
             />
             <input
               type="text"
-              value={search}
+              value={search ?? ''}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by title, ASIN..."
               className="w-full pl-9 pr-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:bg-white focus:border-amber-500"

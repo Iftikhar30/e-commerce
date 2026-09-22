@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { isFirebaseConfigured } from '../lib/firebase';
 import {
@@ -15,15 +15,26 @@ import {
 export const SettingsManager: React.FC = () => {
   const { settings, saveSettingsAction } = useStore();
 
-  const [siteName, setSiteName] = useState(settings.siteName || 'IFTI TechZyro');
-  const [logoUrl, setLogoUrl] = useState(settings.logoUrl || '');
-  const [currency, setCurrency] = useState(settings.currency || '$');
+  const [siteName, setSiteName] = useState(settings?.siteName || 'IFTI TechZyro');
+  const [logoUrl, setLogoUrl] = useState(settings?.logoUrl || '');
+  const [currency, setCurrency] = useState(settings?.currency || '$');
   const [affiliateDisclosure, setAffiliateDisclosure] = useState(
-    settings.affiliateDisclosure || ''
+    settings?.affiliateDisclosure || ''
   );
-  const [footerText, setFooterText] = useState(settings.footerText || '');
-  const [contactEmail, setContactEmail] = useState(settings.contactEmail || '');
+  const [footerText, setFooterText] = useState(settings?.footerText || '');
+  const [contactEmail, setContactEmail] = useState(settings?.contactEmail || '');
   const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (settings) {
+      setSiteName(settings.siteName || 'IFTI TechZyro');
+      setLogoUrl(settings.logoUrl || '');
+      setCurrency(settings.currency || '$');
+      setAffiliateDisclosure(settings.affiliateDisclosure || '');
+      setFooterText(settings.footerText || '');
+      setContactEmail(settings.contactEmail || '');
+    }
+  }, [settings]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -137,7 +148,7 @@ export const SettingsManager: React.FC = () => {
             <input
               type="text"
               required
-              value={siteName}
+              value={siteName ?? ''}
               onChange={(e) => setSiteName(e.target.value)}
               placeholder="e.g. IFTI TechZyro"
               className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:bg-white focus:border-amber-500"
@@ -152,7 +163,7 @@ export const SettingsManager: React.FC = () => {
             <input
               type="text"
               required
-              value={currency}
+              value={currency ?? ''}
               onChange={(e) => setCurrency(e.target.value)}
               placeholder="$"
               className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:bg-white focus:border-amber-500"
@@ -166,7 +177,7 @@ export const SettingsManager: React.FC = () => {
           </label>
           <input
             type="url"
-            value={logoUrl}
+            value={logoUrl ?? ''}
             onChange={(e) => setLogoUrl(e.target.value)}
             placeholder="https://your-domain.com/logo.png"
             className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:bg-white focus:border-amber-500"
@@ -183,7 +194,7 @@ export const SettingsManager: React.FC = () => {
           </label>
           <input
             type="email"
-            value={contactEmail}
+            value={contactEmail ?? ''}
             onChange={(e) => setContactEmail(e.target.value)}
             placeholder="contact@yourstore.com"
             className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:bg-white focus:border-amber-500"
@@ -197,7 +208,7 @@ export const SettingsManager: React.FC = () => {
           </label>
           <textarea
             rows={4}
-            value={affiliateDisclosure}
+            value={affiliateDisclosure ?? ''}
             onChange={(e) => setAffiliateDisclosure(e.target.value)}
             placeholder="Required Amazon affiliate statement..."
             className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:bg-white focus:border-amber-500"
@@ -210,7 +221,7 @@ export const SettingsManager: React.FC = () => {
           </label>
           <input
             type="text"
-            value={footerText}
+            value={footerText ?? ''}
             onChange={(e) => setFooterText(e.target.value)}
             placeholder="© 2026 IFTI TechZyro. All rights reserved."
             className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:bg-white focus:border-amber-500"

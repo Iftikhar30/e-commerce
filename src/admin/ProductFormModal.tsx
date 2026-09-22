@@ -63,24 +63,30 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
   useEffect(() => {
     if (productToEdit) {
-      setTitle(productToEdit.title);
+      setTitle(productToEdit.title || '');
       setAmazonUrl(productToEdit.amazonUrl || '');
       setAffiliateUrl(productToEdit.affiliateUrl || '');
       setAsin(productToEdit.asin || '');
-      setImage(productToEdit.image);
+      setImage(productToEdit.image || '');
       setAvailableImages(productToEdit.image ? [productToEdit.image] : []);
       if (productToEdit.image && productToEdit.image.startsWith('data:image/')) {
         setUploadedFileName('Custom Uploaded Image');
       } else {
         setUploadedFileName('');
       }
-      setPrice(productToEdit.price !== undefined ? String(productToEdit.price) : '');
-      setOriginalPrice(
-        productToEdit.originalPrice !== undefined ? String(productToEdit.originalPrice) : ''
+      setPrice(
+        productToEdit.price !== undefined && productToEdit.price !== null
+          ? String(productToEdit.price)
+          : ''
       );
-      setRating(String(productToEdit.rating || 4.5));
-      setReviewCount(String(productToEdit.reviewCount || 0));
-      setCategory(productToEdit.category || 'gadgets');
+      setOriginalPrice(
+        productToEdit.originalPrice !== undefined && productToEdit.originalPrice !== null
+          ? String(productToEdit.originalPrice)
+          : ''
+      );
+      setRating(String(productToEdit.rating ?? 4.7));
+      setReviewCount(String(productToEdit.reviewCount ?? 100));
+      setCategory(productToEdit.category || categories[0]?.slug || 'gadgets');
       setBadge(productToEdit.badge || '');
       setActive(productToEdit.active !== undefined ? productToEdit.active : true);
       setPinned(Boolean(productToEdit.pinned));
@@ -426,7 +432,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
             <div className="relative">
               <input
                 type="url"
-                value={amazonUrl}
+                value={amazonUrl ?? ''}
                 onChange={(e) => handleAmazonUrlChange(e.target.value)}
                 onBlur={handleAmazonUrlBlur}
                 placeholder="https://a.co/d/... or https://www.amazon.com/dp/B0... (ঐচ্ছিক)"
@@ -473,7 +479,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
             <div className="relative">
               <input
                 type="url"
-                value={affiliateUrl}
+                value={affiliateUrl ?? ''}
                 onChange={(e) => setAffiliateUrl(e.target.value)}
                 placeholder="https://amzn.to/... or https://a.co/... or your affiliate tag URL"
                 className="w-full px-3 py-2 text-xs bg-white border border-amber-300/80 rounded-lg text-neutral-900 focus:bg-white focus:border-amber-600 focus:ring-1 focus:ring-amber-600 placeholder:text-neutral-400"
@@ -493,7 +499,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
             <input
               type="text"
               required
-              value={title}
+              value={title ?? ''}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Smart Fingerprint Padlock Waterproof Biometric..."
               className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-900 focus:bg-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
@@ -619,7 +625,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 </label>
                 <input
                   type="url"
-                  value={image}
+                  value={image ?? ''}
                   onChange={(e) => setImage(e.target.value)}
                   placeholder="https://images.unsplash.com/... or Amazon image URL"
                   className="w-full px-3 py-1.5 text-xs bg-white border border-neutral-200 rounded-xl text-neutral-900 focus:bg-white focus:border-amber-500"
@@ -661,7 +667,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               <input
                 type="number"
                 step="0.01"
-                value={price}
+                value={price ?? ''}
                 onChange={(e) => setPrice(e.target.value)}
                 placeholder="29.99"
                 className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-900 focus:bg-white focus:border-amber-500"
@@ -675,7 +681,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               <input
                 type="number"
                 step="0.01"
-                value={originalPrice}
+                value={originalPrice ?? ''}
                 onChange={(e) => setOriginalPrice(e.target.value)}
                 placeholder="39.99"
                 className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-900 focus:bg-white focus:border-amber-500"
@@ -691,7 +697,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 step="0.1"
                 min="1"
                 max="5"
-                value={rating}
+                value={rating ?? ''}
                 onChange={(e) => setRating(e.target.value)}
                 placeholder="4.7"
                 className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-900 focus:bg-white focus:border-amber-500"
@@ -704,7 +710,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               </label>
               <input
                 type="number"
-                value={reviewCount}
+                value={reviewCount ?? ''}
                 onChange={(e) => setReviewCount(e.target.value)}
                 placeholder="1200"
                 className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-900 focus:bg-white focus:border-amber-500"
@@ -719,7 +725,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 Category
               </label>
               <select
-                value={category}
+                value={category ?? ''}
                 onChange={(e) => setCategory(e.target.value)}
                 className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-900 focus:bg-white focus:border-amber-500"
               >
@@ -736,7 +742,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
                 Badge
               </label>
               <select
-                value={badge}
+                value={badge ?? ''}
                 onChange={(e) => setBadge(e.target.value as ProductBadge)}
                 className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-900 focus:bg-white focus:border-amber-500"
               >

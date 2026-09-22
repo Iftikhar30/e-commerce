@@ -488,6 +488,169 @@ Return strictly JSON matching:
   });
 
   // ==========================================
+  // ADSTERRA ADS CROSS-DEVICE SYNC & MANAGEMENT APIS
+  // ==========================================
+  interface ServerAdsterraAd {
+    id: string;
+    title: string;
+    format: string;
+    size: '320x50' | '300x250' | '728x90' | 'custom';
+    width?: number;
+    height?: number;
+    adCode: string;
+    placement: 'after_banner' | 'after_4_products' | 'after_8_products' | 'after_12_products' | 'before_footer';
+    deviceTarget: 'all' | 'mobile_only' | 'desktop_only';
+    active: boolean;
+    order: number;
+    createdAt?: string;
+    updatedAt?: string;
+  }
+
+  let globalAds: ServerAdsterraAd[] = [
+    {
+      id: 'ad_after_banner_sample',
+      title: 'Adsterra Top Banner (Responsive)',
+      format: 'Banner',
+      size: '320x50',
+      width: 320,
+      height: 50,
+      placement: 'after_banner',
+      deviceTarget: 'all',
+      active: true,
+      order: 1,
+      adCode: `<script type="text/javascript">
+  atOptions = {
+    'key' : 'da048a4a76479724f1d7d82a17f95446',
+    'format' : 'iframe',
+    'height' : 50,
+    'width' : 320,
+    'params' : {}
+  };
+</script>
+<script type="text/javascript" src="https://www.highrevenueformat.com/da048a4a76479724f1d7d82a17f95446/invoke.js"></script>`,
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: 'ad_after_4_products_sample',
+      title: 'Adsterra Mid-Grid Square (300x250)',
+      format: 'Banner',
+      size: '300x250',
+      width: 300,
+      height: 250,
+      placement: 'after_4_products',
+      deviceTarget: 'all',
+      active: true,
+      order: 2,
+      adCode: `<script type="text/javascript">
+  atOptions = {
+    'key' : 'da048a4a76479724f1d7d82a17f95446',
+    'format' : 'iframe',
+    'height' : 250,
+    'width' : 300,
+    'params' : {}
+  };
+</script>
+<script type="text/javascript" src="https://www.highrevenueformat.com/da048a4a76479724f1d7d82a17f95446/invoke.js"></script>`,
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: 'ad_before_footer_desktop',
+      title: 'Adsterra Footer Leaderboard (728x90)',
+      format: 'Banner',
+      size: '728x90',
+      width: 728,
+      height: 90,
+      placement: 'before_footer',
+      deviceTarget: 'desktop_only',
+      active: true,
+      order: 3,
+      adCode: `<script type="text/javascript">
+  atOptions = {
+    'key' : 'da048a4a76479724f1d7d82a17f95446',
+    'format' : 'iframe',
+    'height' : 90,
+    'width' : 728,
+    'params' : {}
+  };
+</script>
+<script type="text/javascript" src="https://www.highrevenueformat.com/da048a4a76479724f1d7d82a17f95446/invoke.js"></script>`,
+      createdAt: new Date().toISOString(),
+    },
+  ];
+
+  // 1. Get all ads
+  app.get("/api/ads", (req, res) => {
+    res.json({ success: true, ads: globalAds });
+  });
+
+  // 2. Save or update an ad (supports cross-device instant sync)
+  app.post("/api/ads", (req, res) => {
+    const data: Partial<ServerAdsterraAd> = req.body;
+    if (!data || !data.title || !data.adCode) {
+      return res.status(400).json({ error: "Missing required ad fields" });
+    }
+
+    const id = data.id || `ad_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const now = new Date().toISOString();
+    const newAd: ServerAdsterraAd = {
+      id,
+      title: data.title,
+      format: data.format || 'Banner',
+      size: data.size || '320x50',
+      width: data.width || 320,
+      height: data.height || 50,
+      adCode: data.adCode,
+      placement: data.placement || 'after_banner',
+      deviceTarget: data.deviceTarget || 'all',
+      active: data.active !== undefined ? Boolean(data.active) : true,
+      order: data.order ?? (globalAds.length + 1),
+      createdAt: data.createdAt || now,
+      updatedAt: now,
+    };
+
+    const index = globalAds.findIndex((a) => a.id === id);
+    if (index >= 0) {
+      globalAds[index] = newAd;
+    } else {
+      globalAds.push(newAd);
+    }
+
+    res.json({ success: true, ad: newAd, ads: globalAds });
+  });
+
+  // 3. Delete an ad (ensures permanent deletion across all devices)
+  app.post("/api/ads/delete", (req, res) => {
+    const { id } = req.body;
+    if (!id) {
+      return res.status(400).json({ error: "Missing ad id" });
+    }
+    globalAds = globalAds.filter((a) => a.id !== id);
+    res.json({ success: true, ads: globalAds });
+  });
+
+  app.delete("/api/ads/:id", (req, res) => {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ error: "Missing ad id" });
+    }
+    globalAds = globalAds.filter((a) => a.id !== id);
+    res.json({ success: true, ads: globalAds });
+  });
+
+  // 4. Toggle active status
+  app.patch("/api/ads/:id/toggle", (req, res) => {
+    const { id } = req.params;
+    const { active } = req.body;
+    const ad = globalAds.find((a) => a.id === id);
+    if (ad) {
+      ad.active = typeof active === 'boolean' ? active : !ad.active;
+      ad.updatedAt = new Date().toISOString();
+      return res.json({ success: true, ad, ads: globalAds });
+    }
+    res.status(404).json({ error: "Ad not found" });
+  });
+
+  // ==========================================
   // GLOBAL DEVICE SECURITY & BLOCKING APIS
   // ==========================================
   interface ServerBlockedDevice {

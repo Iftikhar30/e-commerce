@@ -20,7 +20,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
       <input
         type="text"
         id="global-product-search-input"
-        value={value}
+        value={value ?? ''}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         className="w-full pl-10 pr-10 py-2.5 bg-white border border-neutral-200/90 rounded-xl text-xs sm:text-sm text-neutral-900 placeholder-neutral-400 focus:outline-hidden focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 shadow-xs transition-all"

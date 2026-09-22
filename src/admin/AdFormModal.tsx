@@ -203,7 +203,7 @@ export const AdFormModal: React.FC<AdFormModalProps> = ({
               <input
                 type="text"
                 required
-                value={title}
+                value={title ?? ''}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. Header Mobile Banner 320x50"
                 className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-900 focus:bg-white focus:border-amber-500 focus:outline-hidden"
@@ -215,7 +215,7 @@ export const AdFormModal: React.FC<AdFormModalProps> = ({
                 Ad Format
               </label>
               <select
-                value={format}
+                value={format ?? 'Banner'}
                 onChange={(e) => setFormat(e.target.value)}
                 className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-900 focus:bg-white focus:border-amber-500 focus:outline-hidden"
               >
@@ -235,7 +235,7 @@ export const AdFormModal: React.FC<AdFormModalProps> = ({
                 Ad Size (সাইজ)
               </label>
               <select
-                value={size}
+                value={size ?? '320x50'}
                 onChange={(e) => handleSizeChange(e.target.value as AdSize)}
                 className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-900 focus:bg-white focus:border-amber-500 focus:outline-hidden font-semibold"
               >
@@ -251,7 +251,7 @@ export const AdFormModal: React.FC<AdFormModalProps> = ({
                 Placement (কোথায় দেখাবে)
               </label>
               <select
-                value={placement}
+                value={placement ?? 'after_banner'}
                 onChange={(e) => setPlacement(e.target.value as AdPlacement)}
                 className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-900 focus:bg-white focus:border-amber-500 focus:outline-hidden"
               >
@@ -268,7 +268,7 @@ export const AdFormModal: React.FC<AdFormModalProps> = ({
                 Device Target
               </label>
               <select
-                value={deviceTarget}
+                value={deviceTarget ?? 'all'}
                 onChange={(e) => setDeviceTarget(e.target.value as AdDeviceTarget)}
                 className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-900 focus:bg-white focus:border-amber-500 focus:outline-hidden"
               >
@@ -286,7 +286,7 @@ export const AdFormModal: React.FC<AdFormModalProps> = ({
                 <label className="block text-[11px] font-semibold text-neutral-600 mb-1">Width (px)</label>
                 <input
                   type="number"
-                  value={customWidth}
+                  value={customWidth ?? 320}
                   onChange={(e) => setCustomWidth(Number(e.target.value))}
                   className="w-full px-3 py-1.5 text-xs bg-white border border-neutral-200 rounded-lg"
                 />
@@ -295,7 +295,7 @@ export const AdFormModal: React.FC<AdFormModalProps> = ({
                 <label className="block text-[11px] font-semibold text-neutral-600 mb-1">Height (px)</label>
                 <input
                   type="number"
-                  value={customHeight}
+                  value={customHeight ?? 50}
                   onChange={(e) => setCustomHeight(Number(e.target.value))}
                   className="w-full px-3 py-1.5 text-xs bg-white border border-neutral-200 rounded-lg"
                 />
@@ -323,7 +323,7 @@ export const AdFormModal: React.FC<AdFormModalProps> = ({
             <textarea
               required
               rows={6}
-              value={adCode}
+              value={adCode ?? ''}
               onChange={(e) => setAdCode(e.target.value)}
               placeholder={`<script type="text/javascript">
   atOptions = {
@@ -363,7 +363,7 @@ export const AdFormModal: React.FC<AdFormModalProps> = ({
                 type="number"
                 min="1"
                 max="99"
-                value={order}
+                value={order ?? 1}
                 onChange={(e) => setOrder(Number(e.target.value))}
                 className="w-14 px-2 py-1 text-xs bg-white border border-neutral-300 rounded-lg text-center"
               />

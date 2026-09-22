@@ -110,7 +110,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
               <input
                 type="email"
                 required
-                value={email}
+                value={email ?? ''}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="example@mail.com"
                 className="w-full pl-9 pr-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-lg text-neutral-900 focus:outline-hidden focus:border-amber-500 focus:bg-white transition-all"
@@ -129,7 +129,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
               <input
                 type="password"
                 required
-                value={password}
+                value={password ?? ''}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 className="w-full pl-9 pr-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-lg text-neutral-900 focus:outline-hidden focus:border-amber-500 focus:bg-white transition-all"

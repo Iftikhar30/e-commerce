@@ -352,7 +352,7 @@ export const LoginDetailsManager: React.FC = () => {
           </div>
           <input
             type="text"
-            value={searchQuery}
+            value={searchQuery ?? ''}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="ইমেইল, IP, ব্রাউজার খুঁজুন..."
             className="w-full pl-8 pr-3 py-1.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-900 focus:bg-white focus:border-amber-500 focus:outline-hidden"
@@ -706,7 +706,7 @@ export const LoginDetailsManager: React.FC = () => {
                 <input
                   type="text"
                   required
-                  value={manualIdentifier}
+                  value={manualIdentifier ?? ''}
                   onChange={(e) => setManualIdentifier(e.target.value)}
                   placeholder="যেমন: 103.145.22.10 অথবা dev_abc123"
                   className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-900 focus:bg-white focus:border-purple-500 focus:outline-hidden font-mono"
@@ -719,7 +719,7 @@ export const LoginDetailsManager: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  value={manualReason}
+                  value={manualReason ?? ''}
                   onChange={(e) => setManualReason(e.target.value)}
                   placeholder="যেমন: স্প্যাম বা ক্ষতিকর ট্রাফিক"
                   className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl text-neutral-900 focus:bg-white focus:border-purple-500 focus:outline-hidden"

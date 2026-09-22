@@ -383,10 +383,13 @@ export async function saveBanner(banner: Partial<Banner> & { id?: string }): Pro
   const id = banner.id || `banner_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const bannerDoc: Banner = {
     id,
+    type: banner.type || 'image',
     image: banner.image || '',
     title: banner.title || '',
     link: banner.link || '',
-    isAd: Boolean(banner.isAd),
+    isAd: banner.type === 'ad' ? true : Boolean(banner.isAd),
+    ...(banner.adCode ? { adCode: banner.adCode } : {}),
+    ...(banner.adSize ? { adSize: banner.adSize } : {}),
     active: banner.active !== undefined ? banner.active : true,
     order: banner.order ?? Date.now(),
     startDate: banner.startDate || '',
@@ -397,7 +400,7 @@ export async function saveBanner(banner: Partial<Banner> & { id?: string }): Pro
 
   if (isFirebaseConfigured && db) {
     try {
-      await withTimeout(setDoc(doc(db, 'banners', id), bannerDoc, { merge: true }), 2500);
+      await withTimeout(setDoc(doc(db, 'banners', id), cleanForFirestore(bannerDoc as unknown as Record<string, unknown>), { merge: true }), 2500);
     } catch (err) {
       console.warn('Firestore saveBanner sync warning:', err);
     }
