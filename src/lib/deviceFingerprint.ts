@@ -1,8 +1,6 @@
 import { DeviceInfo } from '../types';
-import { buildApiUrl } from './apiConfig';
-import { fetchCloudSecurityState } from './cloudSyncRelay';
 
-const DEVICE_STORAGE_KEY = 'app_security_device_id';
+const DEVICE_STORAGE_KEY = 'store_device_id_v3';
 
 export function getOrCreateDeviceId(): string {
   try {
@@ -15,14 +13,15 @@ export function getOrCreateDeviceId(): string {
   }
 
   // Generate a distinct pseudo-UUID
-  const rand = Math.random().toString(36).substring(2, 12);
+  const rand = Math.random().toString(36).substring(2, 10);
   const time = Date.now().toString(36);
   const newId = `dev_${time}_${rand}`;
 
   try {
     localStorage.setItem(DEVICE_STORAGE_KEY, newId);
-    // Also save in cookie for persistence across storage clears
-    document.cookie = `${DEVICE_STORAGE_KEY}=${newId};path=/;max-age=31536000;SameSite=Lax`;
+    if (typeof document !== 'undefined') {
+      document.cookie = `${DEVICE_STORAGE_KEY}=${newId};path=/;max-age=31536000;SameSite=Lax`;
+    }
   } catch {
     // ignore
   }
@@ -35,7 +34,7 @@ export function parseUserAgent(): {
   browser: string;
   deviceType: 'Desktop' | 'Mobile' | 'Tablet';
 } {
-  const ua = navigator.userAgent || '';
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
   let os = 'Unknown OS';
   let browser = 'Unknown Browser';
   let deviceType: 'Desktop' | 'Mobile' | 'Tablet' = 'Desktop';
@@ -78,108 +77,47 @@ export function parseUserAgent(): {
 let cachedIpInfo: { ip?: string; city?: string; country?: string } | null = null;
 
 export async function fetchClientPublicIp(): Promise<{ ip?: string; city?: string; country?: string }> {
-  if (cachedIpInfo) return cachedIpInfo;
+  if (cachedIpInfo && cachedIpInfo.ip) return cachedIpInfo;
 
-  // 1. Try local server API route first
+  // 1. Try ipapi for geolocation (Fast & accurate)
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1500);
-    const res = await fetch(buildApiUrl('/api/client-ip'), { signal: controller.signal });
-    clearTimeout(timeout);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.ip && data.ip !== '127.0.0.1') {
-        cachedIpInfo = { ip: data.ip };
-      }
-    }
-  } catch {
-    // continue to public IP providers
-  }
-
-  // 2. Try ipify (very fast & reliable for cross-device public IP)
-  if (!cachedIpInfo?.ip) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 1500);
-      const res = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
-      clearTimeout(timeout);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.ip) {
-          cachedIpInfo = { ip: data.ip };
-        }
-      }
-    } catch {
-      // continue
-    }
-  }
-
-  // 3. Try ipapi for geolocation
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1800);
+    const timeout = setTimeout(() => controller.abort(), 2000);
     const res = await fetch('https://ipapi.co/json/', { signal: controller.signal });
     clearTimeout(timeout);
     if (res.ok) {
       const data = await res.json();
-      cachedIpInfo = {
-        ip: data.ip || cachedIpInfo?.ip,
-        city: data.city,
-        country: data.country_name || data.country,
-      };
-      return cachedIpInfo;
+      if (data && data.ip) {
+        cachedIpInfo = {
+          ip: data.ip,
+          city: data.city || '',
+          country: data.country_name || data.country || '',
+        };
+        return cachedIpInfo;
+      }
     }
   } catch {
-    // ignore
+    // continue to fallback
   }
 
-  return cachedIpInfo || {};
-}
-
-export async function checkServerBlockedStatus(
-  deviceId: string
-): Promise<{ isBlocked: boolean; matchedRecord?: any; clientIp?: string }> {
-  // 1. Check server API first
+  // 2. Fallback to ipify
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2500);
-    const res = await fetch(
-      buildApiUrl(`/api/security/check-client?deviceId=${encodeURIComponent(deviceId)}`),
-      {
-        signal: controller.signal,
-      }
-    );
+    const timeout = setTimeout(() => controller.abort(), 1500);
+    const res = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
     clearTimeout(timeout);
     if (res.ok) {
       const data = await res.json();
-      if (data.isBlocked) {
-        return data;
+      if (data && data.ip) {
+        cachedIpInfo = { ip: data.ip };
+        return cachedIpInfo;
       }
-    }
-  } catch {
-    // continue to cloud relay
-  }
-
-  // 2. Check universal cloud relay
-  try {
-    const cloudState = await fetchCloudSecurityState();
-    const ipInfo = await fetchClientPublicIp();
-    const clientIp = ipInfo.ip;
-
-    const matched = (cloudState.blocked || []).find((b) => {
-      if (deviceId && (b.deviceId === deviceId || b.id === deviceId)) return true;
-      if (clientIp && (b.ip === clientIp || b.id === clientIp || b.id === `ip_${clientIp.replace(/[^a-zA-Z0-9]/g, '_')}`)) return true;
-      return false;
-    });
-
-    if (matched) {
-      return { isBlocked: true, matchedRecord: matched, clientIp };
     }
   } catch {
     // ignore
   }
 
-  return { isBlocked: false };
+  return cachedIpInfo || { ip: 'Unknown IP' };
 }
 
 export async function getCurrentDeviceInfo(): Promise<DeviceInfo> {
@@ -196,7 +134,7 @@ export async function getCurrentDeviceInfo(): Promise<DeviceInfo> {
     browser,
     os,
     deviceType,
-    userAgent: navigator.userAgent || '',
+    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent || '' : '',
     city: ipInfo.city,
     country: ipInfo.country,
     screenResolution,

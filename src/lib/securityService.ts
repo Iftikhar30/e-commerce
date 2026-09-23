@@ -12,29 +12,15 @@ import {
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
 import { LoginLog, BlockedDevice } from '../types';
-import { buildApiUrl } from './apiConfig';
-import {
-  fetchCloudSecurityState,
-  pushCloudLoginLog,
-  pushCloudBlockDevice,
-  removeCloudBlockDevice,
-  clearCloudLogs,
-} from './cloudSyncRelay';
 
-const LOCAL_LOGIN_LOGS_KEY = 'app_security_login_logs_v2';
-const LOCAL_BLOCKED_DEVICES_KEY = 'app_security_blocked_devices_v2';
+const LOCAL_LOGIN_LOGS_KEY = 'store_security_logs_v3';
+const LOCAL_BLOCKED_KEY = 'store_blocked_devices_v3';
 
-// Helper to get local logs
+// Helper for local caching (offline / initial fast render)
 export function getLocalLoginLogs(): LoginLog[] {
   try {
     const raw = localStorage.getItem(LOCAL_LOGIN_LOGS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed.filter((l) => l && l.id && !l.id.includes('sample'));
-      }
-    }
-    return [];
+    return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
@@ -42,9 +28,8 @@ export function getLocalLoginLogs(): LoginLog[] {
 
 export function saveLocalLoginLogs(logs: LoginLog[]) {
   try {
-    const filtered = (logs || []).filter((l) => l && l.id && !l.id.includes('sample'));
-    localStorage.setItem(LOCAL_LOGIN_LOGS_KEY, JSON.stringify(filtered.slice(0, 300)));
-    window.dispatchEvent(new CustomEvent('app_security_login_logs_update'));
+    localStorage.setItem(LOCAL_LOGIN_LOGS_KEY, JSON.stringify((logs || []).slice(0, 300)));
+    window.dispatchEvent(new CustomEvent('app_security_logs_updated'));
   } catch {
     // ignore
   }
@@ -52,7 +37,7 @@ export function saveLocalLoginLogs(logs: LoginLog[]) {
 
 export function getLocalBlockedDevices(): BlockedDevice[] {
   try {
-    const raw = localStorage.getItem(LOCAL_BLOCKED_DEVICES_KEY);
+    const raw = localStorage.getItem(LOCAL_BLOCKED_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -61,14 +46,17 @@ export function getLocalBlockedDevices(): BlockedDevice[] {
 
 export function saveLocalBlockedDevices(devices: BlockedDevice[]) {
   try {
-    localStorage.setItem(LOCAL_BLOCKED_DEVICES_KEY, JSON.stringify(devices || []));
-    window.dispatchEvent(new CustomEvent('app_security_blocked_update'));
+    localStorage.setItem(LOCAL_BLOCKED_KEY, JSON.stringify(devices || []));
+    window.dispatchEvent(new CustomEvent('app_security_blocked_updated'));
   } catch {
     // ignore
   }
 }
 
-// Record a new login attempt (both success and failed attempts across any phone/device)
+/**
+ * Record a login attempt directly to Firebase Firestore
+ * Broadcasts in real-time to any device viewing the admin panel worldwide.
+ */
 export async function recordLoginAttempt(data: {
   email: string;
   status: 'success' | 'failed';
@@ -76,14 +64,14 @@ export async function recordLoginAttempt(data: {
   device: LoginLog['device'];
 }): Promise<LoginLog> {
   const id = `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  const newLog: LoginLog = {
+  const cleanLog: LoginLog = {
     id,
-    email: (data.email || 'unknown').trim(),
+    email: (data.email || 'Admin').trim(),
     status: data.status,
-    reason: data.reason || (data.status === 'failed' ? 'Wrong password attempt' : 'Login successful'),
+    reason: data.reason || (data.status === 'failed' ? 'Wrong password' : 'Login successful'),
     device: {
       deviceId: data.device?.deviceId || `dev_${Date.now()}`,
-      ip: data.device?.ip || '127.0.0.1',
+      ip: data.device?.ip || 'Unknown IP',
       browser: data.device?.browser || 'Browser',
       os: data.device?.os || 'OS',
       deviceType: data.device?.deviceType || 'Mobile',
@@ -95,244 +83,140 @@ export async function recordLoginAttempt(data: {
     timestamp: new Date().toISOString(),
   };
 
-  // 1. Save locally immediately
-  const currentLogs = getLocalLoginLogs().filter((l) => l.id !== newLog.id);
-  currentLogs.unshift(newLog);
-  saveLocalLoginLogs(currentLogs);
+  // 1. Update local cache immediately
+  const localList = getLocalLoginLogs();
+  localList.unshift(cleanLog);
+  saveLocalLoginLogs(localList);
 
-  // 2. Save directly to Firestore (Instant real-time broadcast to all devices)
+  // 2. Direct Firestore write (Vercel-native & real-time global broadcast)
   if (isFirebaseConfigured && db) {
     try {
       const logRef = doc(db, 'login_logs', id);
-      await setDoc(logRef, newLog);
+      await setDoc(logRef, cleanLog);
     } catch (err) {
-      console.warn('Firestore setDoc login_logs error:', err);
+      console.warn('Firestore recordLoginAttempt error:', err);
     }
   }
 
-  // 3. Push to Universal Cloud Relay
-  pushCloudLoginLog(newLog).catch((err) => {
-    console.warn('Cloud sync relay error for login attempt:', err);
-  });
-
-  // 4. Sync to Backend Server API
-  try {
-    const apiUrl = buildApiUrl('/api/security/record-login');
-    fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(newLog),
-      keepalive: true,
-    }).catch(() => {});
-  } catch {
-    // ignore
-  }
-
-  return newLog;
+  return cleanLog;
 }
 
-// Block a device (Enforced universally across all phones and browsers)
+/**
+ * Block a device in Firebase Firestore
+ */
 export async function blockDevice(device: BlockedDevice): Promise<void> {
-  // 1. Update local cache
-  const localList = getLocalBlockedDevices().filter(
-    (b) => b.id !== device.id && b.deviceId !== device.deviceId && (device.ip ? b.ip !== device.ip : true)
-  );
-  localList.unshift(device);
+  if (!device || !device.deviceId) return;
 
-  if (device.ip && device.ip !== 'Unknown IP' && device.ip !== '127.0.0.1') {
-    const ipEntry: BlockedDevice = {
-      ...device,
-      id: `ip_${device.ip.replace(/[^a-zA-Z0-9]/g, '_')}`,
-      deviceId: device.deviceId,
-    };
-    if (!localList.some((b) => b.id === ipEntry.id)) {
-      localList.unshift(ipEntry);
-    }
-  }
+  const blockRecord: BlockedDevice = {
+    id: device.deviceId,
+    deviceId: device.deviceId,
+    ip: device.ip,
+    browser: device.browser,
+    os: device.os,
+    deviceType: device.deviceType,
+    reason: device.reason || 'Blocked by administrator',
+    blockedAt: new Date().toISOString(),
+    blockedBy: device.blockedBy || 'Store Admin',
+  };
 
+  // 1. Save to local cache
+  const localList = getLocalBlockedDevices().filter((b) => b.deviceId !== device.deviceId);
+  localList.unshift(blockRecord);
   saveLocalBlockedDevices(localList);
 
-  // 2. Update Firestore immediately
+  // 2. Direct Firestore write
   if (isFirebaseConfigured && db) {
     try {
-      const docRef = doc(db, 'blocked_devices', device.id);
-      await setDoc(docRef, device);
-      if (device.deviceId && device.deviceId !== device.id) {
-        await setDoc(doc(db, 'blocked_devices', device.deviceId), device);
-      }
-      if (device.ip && device.ip !== 'Unknown IP' && device.ip !== '127.0.0.1') {
-        const ipDocRef = doc(db, 'blocked_devices', `ip_${device.ip.replace(/[^a-zA-Z0-9]/g, '_')}`);
-        await setDoc(ipDocRef, device);
-      }
+      const docRef = doc(db, 'blocked_devices', device.deviceId);
+      await setDoc(docRef, blockRecord);
     } catch (err) {
       console.warn('Firestore blockDevice error:', err);
     }
   }
-
-  // 3. Push to Universal Cloud Relay
-  pushCloudBlockDevice(device).catch((err) => {
-    console.warn('Cloud sync block error:', err);
-  });
-
-  // 4. Sync to Backend Server API
-  try {
-    const apiUrl = buildApiUrl('/api/security/block');
-    fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(device),
-      keepalive: true,
-    }).catch(() => {});
-  } catch {
-    // ignore
-  }
 }
 
-// Unblock a device globally across all networks and devices
-export async function unblockDevice(deviceIdOrIp: string): Promise<void> {
-  const target = (deviceIdOrIp || '').trim();
-  if (!target) return;
+/**
+ * Unblock a device in Firebase Firestore
+ */
+export async function unblockDevice(deviceId: string): Promise<void> {
+  const targetId = (deviceId || '').trim();
+  if (!targetId) return;
 
-  // 1. Immediately remove from local cache and dispatch event
-  const localList = getLocalBlockedDevices().filter(
-    (b) =>
-      b.id !== target &&
-      b.deviceId !== target &&
-      b.ip !== target &&
-      `ip_${(b.ip || '').replace(/[^a-zA-Z0-9]/g, '_')}` !== target
-  );
+  // 1. Immediately remove from local storage
+  const localList = getLocalBlockedDevices().filter((b) => b.deviceId !== targetId && b.id !== targetId);
   saveLocalBlockedDevices(localList);
 
-  // 2. Delete from Firestore (Direct doc delete + Query search to remove all associated aliases)
+  // 2. Delete from Firestore
   if (isFirebaseConfigured && db) {
     try {
-      const directDocRef = doc(db, 'blocked_devices', target);
-      deleteDoc(directDocRef).catch(() => {});
+      const docRef = doc(db, 'blocked_devices', targetId);
+      await deleteDoc(docRef);
 
-      // Query and delete all matching docs
+      // Search and delete any document with matching deviceId
       const snap = await getDocs(collection(db, 'blocked_devices'));
       const batch = writeBatch(db);
-      let count = 0;
-      snap.forEach((docSnap) => {
-        const data = docSnap.data() as BlockedDevice;
-        if (
-          docSnap.id === target ||
-          data.id === target ||
-          data.deviceId === target ||
-          data.ip === target ||
-          `ip_${(data.ip || '').replace(/[^a-zA-Z0-9]/g, '_')}` === target
-        ) {
-          batch.delete(docSnap.ref);
-          count++;
+      let found = 0;
+      snap.forEach((d) => {
+        const data = d.data();
+        if (d.id === targetId || data.deviceId === targetId || data.id === targetId) {
+          batch.delete(d.ref);
+          found++;
         }
       });
-      if (count > 0) {
+      if (found > 0) {
         await batch.commit();
       }
     } catch (err) {
       console.warn('Firestore unblockDevice error:', err);
     }
   }
-
-  // 3. Remove from Universal Cloud Relay
-  removeCloudBlockDevice(target).catch(() => {});
-
-  // 4. Sync to Backend Server
-  try {
-    const apiUrl = buildApiUrl('/api/security/unblock');
-    await fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: target, deviceId: target, ip: target }),
-      keepalive: true,
-    });
-  } catch {
-    // ignore
-  }
 }
 
-// Clear all login logs globally
-export async function clearAllLoginLogs(): Promise<void> {
-  saveLocalLoginLogs([]);
+/**
+ * Clear all blocked devices completely
+ */
+export async function unblockAllDevices(): Promise<void> {
+  saveLocalBlockedDevices([]);
 
-  // 1. Clear Firestore
   if (isFirebaseConfigured && db) {
     try {
-      const colRef = collection(db, 'login_logs');
-      const snap = await getDocs(colRef);
+      const snap = await getDocs(collection(db, 'blocked_devices'));
       const batch = writeBatch(db);
       snap.forEach((d) => batch.delete(d.ref));
       await batch.commit();
     } catch (err) {
-      console.warn('Firestore clear logs error:', err);
+      console.warn('Firestore unblockAllDevices error:', err);
     }
-  }
-
-  // 2. Clear Universal Cloud Relay
-  clearCloudLogs().catch(() => {});
-
-  // 3. Clear Backend Server
-  try {
-    const apiUrl = buildApiUrl('/api/security/clear-logs');
-    fetch(apiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      keepalive: true,
-    }).catch(() => {});
-  } catch {
-    // ignore
   }
 }
 
-// Real-time subscription to blocked devices list across all phones and browsers
-export function subscribeToBlockedDevices(
-  callback: (devices: BlockedDevice[]) => void
-): () => void {
-  // Initial callback with local data
+/**
+ * Clear all login activity logs from Firestore
+ */
+export async function clearAllLoginLogs(): Promise<void> {
+  saveLocalLoginLogs([]);
+
+  if (isFirebaseConfigured && db) {
+    try {
+      const snap = await getDocs(collection(db, 'login_logs'));
+      const batch = writeBatch(db);
+      snap.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    } catch (err) {
+      console.warn('Firestore clearAllLoginLogs error:', err);
+    }
+  }
+}
+
+/**
+ * Real-time subscription to Blocked Devices from Firestore
+ */
+export function subscribeToBlockedDevices(callback: (devices: BlockedDevice[]) => void): () => void {
+  // Call immediately with local cache
   callback(getLocalBlockedDevices());
 
-  const syncBlockedFromServer = async () => {
-    try {
-      // 1. Fetch from server API
-      let serverBlocked: BlockedDevice[] | null = null;
-      try {
-        const apiUrl = buildApiUrl('/api/security/blocked');
-        const res = await fetch(apiUrl);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && Array.isArray(data.devices)) {
-            serverBlocked = data.devices;
-          }
-        }
-      } catch {
-        // ignore
-      }
-
-      // 2. Fetch from Universal Cloud Relay
-      const cloudData = await fetchCloudSecurityState();
-      const cloudBlocked = cloudData.blocked || [];
-
-      // Combine server + cloud (server/cloud is authoritative)
-      const combinedMap = new Map<string, BlockedDevice>();
-      if (serverBlocked) {
-        serverBlocked.forEach((b) => combinedMap.set(b.id, b));
-      }
-      cloudBlocked.forEach((b) => combinedMap.set(b.id, b));
-
-      const authoritativeList = Array.from(combinedMap.values());
-      // Save authoritative list without resurrecting unblocked records
-      saveLocalBlockedDevices(authoritativeList);
-      callback(authoritativeList);
-    } catch {
-      // ignore
-    }
-  };
-
-  syncBlockedFromServer();
-
   let unsubscribeFirestore: (() => void) | null = null;
+
   if (isFirebaseConfigured && db) {
     try {
       const colRef = collection(db, 'blocked_devices');
@@ -340,162 +224,95 @@ export function subscribeToBlockedDevices(
         colRef,
         (snapshot) => {
           const list: BlockedDevice[] = [];
-          snapshot.forEach((docSnap) => {
-            list.push(docSnap.data() as BlockedDevice);
+          snapshot.forEach((d) => {
+            const data = d.data() as BlockedDevice;
+            if (data && data.deviceId) {
+              list.push(data);
+            }
           });
           saveLocalBlockedDevices(list);
           callback(list);
         },
-        () => {
-          syncBlockedFromServer();
+        (err) => {
+          console.warn('Firestore blocked_devices listener error:', err);
+          callback(getLocalBlockedDevices());
         }
       );
-    } catch {
-      syncBlockedFromServer();
+    } catch (err) {
+      console.warn('Firestore blocked_devices subscribe error:', err);
     }
   }
 
-  const handleLocalChange = () => {
-    callback(getLocalBlockedDevices());
-  };
-  window.addEventListener('storage', handleLocalChange);
-  window.addEventListener('app_security_blocked_update', handleLocalChange);
-
-  // Poll every 3 seconds
-  const intervalId = setInterval(syncBlockedFromServer, 3000);
+  const handleLocal = () => callback(getLocalBlockedDevices());
+  window.addEventListener('app_security_blocked_updated', handleLocal);
+  window.addEventListener('storage', handleLocal);
 
   return () => {
     if (unsubscribeFirestore) unsubscribeFirestore();
-    window.removeEventListener('storage', handleLocalChange);
-    window.removeEventListener('app_security_blocked_update', handleLocalChange);
-    clearInterval(intervalId);
+    window.removeEventListener('app_security_blocked_updated', handleLocal);
+    window.removeEventListener('storage', handleLocal);
   };
 }
 
-// Real-time subscription to Login Logs across all phones and browsers
-export function subscribeToLoginLogs(
-  callback: (logs: LoginLog[]) => void
-): () => void {
+/**
+ * Real-time subscription to Login Logs from Firestore
+ */
+export function subscribeToLoginLogs(callback: (logs: LoginLog[]) => void): () => void {
+  // Call immediately with local cache
   callback(getLocalLoginLogs());
 
-  const syncLogsFromServer = async () => {
-    try {
-      // 1. Fetch from Backend Server API
-      let serverLogs: LoginLog[] = [];
-      try {
-        const apiUrl = buildApiUrl('/api/security/logs');
-        const res = await fetch(apiUrl);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.logs && Array.isArray(data.logs)) {
-            serverLogs = data.logs.filter((l: LoginLog) => l && l.id && !l.id.includes('sample'));
-          }
-        }
-      } catch {
-        // ignore
-      }
-
-      // 2. Fetch from Universal Cloud Relay
-      const cloudData = await fetchCloudSecurityState();
-      const cloudLogs = (cloudData.logs || []).filter(
-        (l: LoginLog) => l && l.id && !l.id.includes('sample')
-      );
-
-      const combinedMap = new Map<string, LoginLog>();
-      serverLogs.forEach((l) => combinedMap.set(l.id, l));
-      cloudLogs.forEach((l) => combinedMap.set(l.id, l));
-      
-      const local = getLocalLoginLogs();
-      local.forEach((l) => {
-        if (!combinedMap.has(l.id)) {
-          combinedMap.set(l.id, l);
-        }
-      });
-
-      const sorted = Array.from(combinedMap.values()).sort(
-        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-      );
-
-      saveLocalLoginLogs(sorted);
-      callback(sorted);
-    } catch {
-      // ignore
-    }
-  };
-
-  syncLogsFromServer();
-
   let unsubscribeFirestore: (() => void) | null = null;
+
   if (isFirebaseConfigured && db) {
     try {
       const colRef = collection(db, 'login_logs');
-      const q = query(colRef, orderBy('timestamp', 'desc'), limit(250));
+      const q = query(colRef, orderBy('timestamp', 'desc'), limit(300));
       unsubscribeFirestore = onSnapshot(
         q,
         (snapshot) => {
           const list: LoginLog[] = [];
-          snapshot.forEach((docSnap) => {
-            const item = docSnap.data() as LoginLog;
-            if (item && item.id && !item.id.includes('sample')) {
-              list.push(item);
+          snapshot.forEach((d) => {
+            const data = d.data() as LoginLog;
+            if (data && data.id) {
+              list.push(data);
             }
           });
-
-          const sorted = list.sort(
-            (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-          );
-
-          saveLocalLoginLogs(sorted);
-          callback(sorted);
+          saveLocalLoginLogs(list);
+          callback(list);
         },
-        () => {
-          syncLogsFromServer();
+        (err) => {
+          console.warn('Firestore login_logs listener error:', err);
+          callback(getLocalLoginLogs());
         }
       );
-    } catch {
-      syncLogsFromServer();
+    } catch (err) {
+      console.warn('Firestore login_logs subscribe error:', err);
     }
   }
 
-  const handleLocalChange = () => {
-    callback(getLocalLoginLogs());
-  };
-  window.addEventListener('storage', handleLocalChange);
-  window.addEventListener('app_security_login_logs_update', handleLocalChange);
-
-  // Poll every 3 seconds for continuous cross-device sync
-  const intervalId = setInterval(syncLogsFromServer, 3000);
+  const handleLocal = () => callback(getLocalLoginLogs());
+  window.addEventListener('app_security_logs_updated', handleLocal);
+  window.addEventListener('storage', handleLocal);
 
   return () => {
     if (unsubscribeFirestore) unsubscribeFirestore();
-    window.removeEventListener('storage', handleLocalChange);
-    window.removeEventListener('app_security_login_logs_update', handleLocalChange);
-    clearInterval(intervalId);
+    window.removeEventListener('app_security_logs_updated', handleLocal);
+    window.removeEventListener('storage', handleLocal);
   };
 }
 
-// Check if a specific device or IP is blocked
+/**
+ * Check if a specific device is currently blocked
+ */
 export function isDeviceBlockedCheck(
   currentDeviceId: string,
-  currentIp: string | undefined,
   blockedList: BlockedDevice[]
 ): BlockedDevice | null {
-  if (!currentDeviceId && !currentIp) return null;
-  if (!Array.isArray(blockedList) || blockedList.length === 0) return null;
-
-  const found = blockedList.find((b) => {
-    if (!b) return false;
-    if (b.deviceId && currentDeviceId && b.deviceId === currentDeviceId) {
-      return true;
-    }
-    if (b.ip && currentIp && currentIp !== 'Unknown IP' && b.ip === currentIp) {
-      return true;
-    }
-    if (b.id && (b.id === currentDeviceId || b.id === currentIp)) {
-      return true;
-    }
-    return false;
-  });
-
-  return found || null;
+  if (!currentDeviceId || !Array.isArray(blockedList) || blockedList.length === 0) {
+    return null;
+  }
+  const match = blockedList.find(
+    (b) => b && (b.deviceId === currentDeviceId || b.id === currentDeviceId)
+  );
+  return match || null;
 }

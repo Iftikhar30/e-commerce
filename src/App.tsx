@@ -21,7 +21,7 @@ import { LoginDetailsManager } from './admin/LoginDetailsManager';
 import { AdManager } from './admin/AdManager';
 import { BlockedScreen } from './components/BlockedScreen';
 import { AdDisplaySlot } from './components/AdDisplaySlot';
-import { getCurrentDeviceInfo, checkServerBlockedStatus } from './lib/deviceFingerprint';
+import { getCurrentDeviceInfo } from './lib/deviceFingerprint';
 import { subscribeToBlockedDevices, isDeviceBlockedCheck } from './lib/securityService';
 import { subscribeToAds } from './lib/adService';
 import { Product, Banner, DeviceInfo, BlockedDevice, AdsterraAd } from './types';
@@ -59,7 +59,15 @@ const MainAppContent: React.FC = () => {
   const [currentDevice, setCurrentDevice] = useState<DeviceInfo | null>(null);
   const [blockedRecord, setBlockedRecord] = useState<BlockedDevice | null>(null);
 
+  // Clear any legacy localStorage keys on first mount
   useEffect(() => {
+    try {
+      localStorage.removeItem('app_security_blocked_devices_v2');
+      localStorage.removeItem('app_security_login_logs_v2');
+    } catch {
+      // ignore
+    }
+    
     let mounted = true;
     getCurrentDeviceInfo().then((dev) => {
       if (mounted) setCurrentDevice(dev);
@@ -72,13 +80,9 @@ const MainAppContent: React.FC = () => {
   useEffect(() => {
     if (!currentDevice) return;
 
-    // 1. Subscribe to local and Firestore blocked devices
+    // Real-time Firestore subscription to blocked devices (Works seamlessly on Vercel)
     const unsubscribe = subscribeToBlockedDevices((blockedList) => {
-      const match = isDeviceBlockedCheck(
-        currentDevice.deviceId,
-        currentDevice.ip,
-        blockedList
-      );
+      const match = isDeviceBlockedCheck(currentDevice.deviceId, blockedList);
       if (match) {
         setBlockedRecord(match);
       } else {
@@ -86,21 +90,8 @@ const MainAppContent: React.FC = () => {
       }
     });
 
-    // 2. Check server-side blocked status (ensures cross-device & cross-browser synchronization)
-    const checkServer = async () => {
-      const serverCheck = await checkServerBlockedStatus(currentDevice.deviceId);
-      if (serverCheck.isBlocked && serverCheck.matchedRecord) {
-        setBlockedRecord(serverCheck.matchedRecord);
-      } else if (!serverCheck.isBlocked) {
-        setBlockedRecord(null);
-      }
-    };
-    checkServer();
-    const interval = setInterval(checkServer, 5000);
-
     return () => {
       unsubscribe();
-      clearInterval(interval);
     };
   }, [currentDevice]);
 
