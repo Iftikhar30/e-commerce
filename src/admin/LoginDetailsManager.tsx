@@ -212,6 +212,9 @@ export const LoginDetailsManager: React.FC = () => {
   const handleUnblock = async (deviceIdOrIp: string) => {
     if (confirm('আপনি কি এই ডিভাইসটি আনব্লক করতে চান? আনব্লক করলে ওয়েবসাইটটিতে পুনরায় প্রবেশ করতে পারবে।')) {
       await unblockDevice(deviceIdOrIp);
+      setBlockedDevices((prev) =>
+        prev.filter((b) => b.id !== deviceIdOrIp && b.deviceId !== deviceIdOrIp && b.ip !== deviceIdOrIp)
+      );
     }
   };
 
@@ -628,7 +631,7 @@ export const LoginDetailsManager: React.FC = () => {
                               </span>
                               <button
                                 type="button"
-                                onClick={() => handleUnblock(log.device.deviceId)}
+                                onClick={() => handleUnblock(blocked.id || blocked.deviceId || log.device.deviceId)}
                                 className="px-2.5 py-1 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
                               >
                                 আনব্লক

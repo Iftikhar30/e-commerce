@@ -91,6 +91,8 @@ const MainAppContent: React.FC = () => {
       const serverCheck = await checkServerBlockedStatus(currentDevice.deviceId);
       if (serverCheck.isBlocked && serverCheck.matchedRecord) {
         setBlockedRecord(serverCheck.matchedRecord);
+      } else if (!serverCheck.isBlocked) {
+        setBlockedRecord(null);
       }
     };
     checkServer();
