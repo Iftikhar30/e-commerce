@@ -2,7 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
+    // Helper Functions: সিকিউরিটি যাচাইয়ের জন্য
     function isSignedIn() {
       return request.auth != null;
     }
@@ -11,12 +11,12 @@ service cloud.firestore {
       return isSignedIn();
     }
 
-    // Default deny all
+    // Default deny all: নিরাপত্তার স্বার্থে অনির্ধারিত সব কালেকশন ডিফল্টভাবে ব্লক
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // 1. Products: সাধারণ ভিজিটররা দেখতে পারবে, ক্লিক কাউন্ট বাড়াতে পারবে; অ্যাডমিন ফুল কন্ট্রোল পাবে
+    // 1. Products: সাধারণ ভিজিটর প্রোডাক্ট দেখতে ও ক্লিক কাউন্ট বাড়াতে পারবে; অ্যাডমিন পণ্য যোগ/এডিট/ডিলিট করবে
     match /products/{productId} {
       allow read: if true;
       allow create, delete: if isAdmin();
@@ -26,34 +26,35 @@ service cloud.firestore {
       );
     }
 
-    // 2. Banners: ব্যানার সবাই পড়তে পারবে, অ্যাডমিন তৈরি/এডিট/ডিলিট করবে
+    // 2. Banners: ব্যানার সবাই দেখতে পারবে, অ্যাডমিন পরিবর্তন করবে
     match /banners/{bannerId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // 3. Categories: ক্যাটাগরি সবাই পড়তে পারবে, অ্যাডমিন তৈরি/এডিট/ডিলিট করবে
+    // 3. Categories: ক্যাটাগরি সবাই দেখতে পারবে, অ্যাডমিন পরিবর্তন করবে
     match /categories/{categoryId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // 4. Settings: স্টোর কনফিগারেশন সবাই পড়তে পারবে, অ্যাডমিন আপডেট করবে
+    // 4. Settings: স্টোর সেটিংস সবাই দেখতে পারবে, অ্যাডমিন সেভ করবে
     match /settings/{settingId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // 5. Ads: বিজ্ঞাপন ও পপআপ ব্যানার সবাই পড়তে পারবে, অ্যাডমিন ম্যানেজ করবে
+    // 5. Ads: বিজ্ঞাপন সবাই দেখতে পারবে, অ্যাডমিন পরিবর্তন করবে
     match /ads/{adId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // 6. Login Logs: 
-    // - যেকোনো ডিভাইস থেকে লগইন চেষ্টা রেকর্ড (Create) করা যাবে (পাসওয়ার্ড ছাড়া ও নির্দিষ্ট ফিল্ড ভ্যালিডেশন সহ)
-    // - সাধারণ ভিজিটর কখনোই অন্য কারো লগ পড়তে (Read/List) বা পরিবর্তন করতে পারবে না
-    // - শুধুমাত্র অ্যাডমিন সমস্ত লগইন হিস্টোরি পড়তে ও ম্যানেজ করতে পারবে
+    // 6. Login Logs:
+    // - পৃথিবীর যেকোনো ফোন/ডিভাইস থেকে শুধুমাত্র নতুন লগ তৈরি (Create) হতে পারবে
+    // - কোনো অবস্থাতেই পাসওয়ার্ড সংক্রান্ত সেনসিটিভ তথ্য (password, enteredPassword ইত্যাদি) ফায়ারবেসে জমা হতে পারবে না
+    // - সাধারণ ভিজিটর কোনো লগ পড়তে পারবে না
+    // - শুধুমাত্র অথেনটিকেটেড অ্যাডমিন লগ পড়তে (Read), রিয়েল-টাইম দেখতে এবং ডিলিট/ম্যানেজ করতে পারবে
     match /login_logs/{logId} {
       allow create: if !('password' in request.resource.data) 
                     && !('enteredPassword' in request.resource.data) 
@@ -65,15 +66,15 @@ service cloud.firestore {
     }
 
     // 7. Blocked Devices:
-    // - যে কোনো ডিভাইস শুধু নিজের আইডি দিয়ে ব্লক চেক (get) করতে পারবে
-    // - পুরো তালিকা খোঁজা (list) বা কাউকে ব্লক/আনব্লক করার ক্ষমতা শুধু অ্যাডমিনের থাকবে
+    // - যেকোনো ডিভাইস তার নিজের স্ট্যাটাস যাচাইয়ের জন্য নির্দিষ্ট deviceId দিয়ে চেক (get) করতে পারবে
+    // - পুরো ব্লক লিস্ট দেখা (list) এবং নতুন ডিভাইস ব্লক বা আনব্লক (write) করা শুধুমাত্র অ্যাডমিনের জন্য সংরক্ষিত
     match /blocked_devices/{deviceId} {
       allow get: if true;
       allow list: if isAdmin();
       allow write: if isAdmin();
     }
 
-    // 8. Admin Whitelist: শুধুমাত্র অথেনটিকেটেড ইউজাররা অ্যাডমিন রেকর্ড পড়তে/লিখতে পারবে
+    // 8. Admin Whitelist / Auth Records
     match /admins/{uid} {
       allow read, write: if isSignedIn();
     }
