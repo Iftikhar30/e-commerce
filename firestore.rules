@@ -1,22 +1,35 @@
 rules_version = '2';
-service cloud.firestore {
+serviceservice cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper Functions: সিকিউরিটি যাচাইয়ের জন্য
+    // ----------------------------------------------------
+    // HELPER FUNCTIONS & ROLE-BASED ACCESS CONTROL (RBAC)
+    // ----------------------------------------------------
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
     function isSignedIn() {
       return request.auth != null;
     }
 
+    // Secure Admin Authorization:
+    // 1. Never grants admin to arbitrary authenticated users.
+    // 2. Checks trusted server-side whitelist in /admins/{uid}
+    // 3. Or bootstrap master admin email (ifti30ahmed@gmail.com) with verified email.
     function isAdmin() {
-      return isSignedIn();
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (request.auth.token.email == 'ifti30ahmed@gmail.com' && request.auth.token.email_verified == true)
+      );
     }
 
-    // Default deny all: নিরাপত্তার স্বার্থে অনির্ধারিত সব কালেকশন ডিফল্টভাবে ব্লক
+    // Default Deny: Catch-all block on any unspecified paths
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // 1. Products: সাধারণ ভিজিটর প্রোডাক্ট দেখতে ও ক্লিক কাউন্ট বাড়াতে পারবে; অ্যাডমিন পণ্য যোগ/এডিট/ডিলিট করবে
+    // 1. Products: Public catalog reading & affiliate click tracking
     match /products/{productId} {
       allow read: if true;
       allow create, delete: if isAdmin();
@@ -26,54 +39,65 @@ service cloud.firestore {
       );
     }
 
-    // 2. Banners: ব্যানার সবাই দেখতে পারবে, অ্যাডমিন পরিবর্তন করবে
+    // 2. Promotional Banners: Public read, Admin write
     match /banners/{bannerId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // 3. Categories: ক্যাটাগরি সবাই দেখতে পারবে, অ্যাডমিন পরিবর্তন করবে
+    // 3. Categories: Public read, Admin write
     match /categories/{categoryId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAisAdmisAisAdmindminindmin();
     }
 
-    // 4. Settings: স্টোর সেটিংস সবাই দেখতে পারবে, অ্যাডমিন সেভ করবে
+    // 4. Storefront Settings: Public read, Admin write
     match /settings/{settingId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // 5. Ads: বিজ্ঞাপন সবাই দেখতে পারবে, অ্যাডমিন পরিবর্তন করবে
+    // 5. Ad Placements: Public read, Admin write
     match /ads/{adId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
     // 6. Login Logs:
-    // - যেকোনো ডিভাইস থেকে লগইন হিস্টোরি তৈরি (Create) হতে পারবে
-    // - পাসওয়ার্ড সংক্রান্ত সেনসিটিভ তথ্য ফায়ারবেসে প্রবেশ সম্পূর্ণ নিষিদ্ধ ও ফিল্টার্ড
-    // - অ্যাডমিন প্যানেলে রিয়েল-টাইমে প্রদর্শন (read) ও ক্লিয়ার (delete) করা যাবে
+    // - Read / List / Delete are STRICTLY restricted to Admin (Zero public log scraping).
+    // - Create allows sanitized login attempts with strictly zero password fields allowed.
+    // - Update is completely denied (immutable audit log).
     match /login_logs/{logId} {
-      allow create: if !('password' in request.resource.data) 
-                    && !('enteredPassword' in request.resource.data) 
-                    && !('wrongPassword' in request.resource.data)
-                    && !('plainPassword' in request.resource.data)
-                    && request.resource.data.status in ['success', 'failed', 'blocked'];
-      allow read, delete: if true;
-      allow update: if isAdmin();
+      allow read, list, delete: if isAdmin();
+      allow update: if false;
+      allow create: if isAdmin() || (
+        isValidId(logId) &&
+        request.resource.data.id == logId &&
+        request.resource.data.status in ['success', 'failed', 'blocked'] &&
+        request.resource.data.email is string && request.resource.data.email.size() <= 120 &&
+        !('password' in request.resource.data) &&
+        !('enteredPassword' in request.resource.data) &&
+        !('wrongPassword' in request.resource.data) &&
+        !('plainPassword' in request.resource.data) &&
+        !('passwordAttempt' in request.resource.data)
+      );
     }
 
     // 7. Blocked Devices:
-    // - যেকোনো ডিভাইস ব্লক স্ট্যাটাস যাচাই করতে পারবে
-    // - অ্যাডমিন প্যানেল থেকে ব্লক ও আনব্লক (delete) সারা বিশ্বের সব ডিভাইসে তাৎক্ষণিকভাবে কার্যকর হবে
+    // - Visitors can ONLY query/listen to their own single document (get by deviceId),
+    //   preventing leakage/scraping of other blocked users.
+    // - List / Create / Update / Delete are strictly Admin-only.
     match /blocked_devices/{deviceId} {
-      allow read, write: if true;
+      allow get: if isValidId(deviceId);
+      allow list, create, update, delete: if isAdmin();
     }
 
-    // 8. Admin Whitelist / Auth Records
+    // 8. Admin Whitelist:
+    // - Only existing admins can read the admin list.
+    // - Normal users cannot write or escalate themselves.
     match /admins/{uid} {
-      allow read, write: if isSignedIn();
+      allow read: if isAdmin();
+      allow write: if false;
     }
   }
 }

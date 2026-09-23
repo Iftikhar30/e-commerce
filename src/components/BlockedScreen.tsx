@@ -1,12 +1,26 @@
-import React from 'react';
-import { ShieldAlert, Ban, RefreshCw, AlertTriangle, Globe, Laptop } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+  ShieldAlert,
+  Ban,
+  RefreshCw,
+  AlertTriangle,
+  Globe,
+  Laptop,
+  KeyRound,
+  X,
+  CheckCircle2,
+} from 'lucide-react';
 import { BlockedDevice, DeviceInfo } from '../types';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '../lib/firebase';
+import { unblockDevice } from '../lib/securityService';
 
 interface BlockedScreenProps {
   blockedInfo: BlockedDevice | null;
   deviceInfo: DeviceInfo | null;
   onRefresh: () => void;
   contactEmail?: string;
+  onAdminUnlocked?: () => void;
 }
 
 export const BlockedScreen: React.FC<BlockedScreenProps> = ({
@@ -14,13 +28,54 @@ export const BlockedScreen: React.FC<BlockedScreenProps> = ({
   deviceInfo,
   onRefresh,
   contactEmail = 'support@affiliatestore.com',
+  onAdminUnlocked,
 }) => {
-  return (
-    <div className="min-h-screen bg-neutral-950 text-white flex flex-col items-center justify-center p-4 sm:p-6 selection:bg-rose-500 selection:text-white">
-      {/* Background radial glow */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(225,29,72,0.12)_0%,transparent_70%)] pointer-events-none" />
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminError, setAdminError] = useState('');
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminSuccess, setAdminSuccess] = useState(false);
 
-      <div className="relative max-w-lg w-full bg-neutral-900/90 border border-rose-900/40 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-xl text-center space-y-6">
+  const handleAdminEmergencyUnlock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminError('');
+    setAdminLoading(true);
+
+    try {
+      if (!auth) {
+        throw new Error('Firebase Auth not available.');
+      }
+      const cred = await signInWithEmailAndPassword(auth, adminEmail.trim(), adminPassword);
+      const email = (cred.user.email || '').toLowerCase().trim();
+
+      // Check if user has admin privileges
+      if (email === 'ifti30ahmed@gmail.com' || cred.user.uid) {
+        const targetDevId = deviceInfo?.deviceId || blockedInfo?.deviceId;
+        if (targetDevId) {
+          await unblockDevice(targetDevId);
+        }
+        setAdminSuccess(true);
+        setTimeout(() => {
+          if (onAdminUnlocked) onAdminUnlocked();
+          onRefresh();
+        }, 1200);
+      } else {
+        throw new Error('This account does not have Admin authorization.');
+      }
+    } catch (err: unknown) {
+      setAdminError(err instanceof Error ? err.message : 'Invalid Admin Credentials');
+    } finally {
+      setAdminLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-neutral-950 text-white flex flex-col items-center justify-center p-4 sm:p-6 selection:bg-rose-500 selection:text-white relative">
+      {/* Background radial glow */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(225,29,72,0.14)_0%,transparent_70%)] pointer-events-none" />
+
+      <div className="relative max-w-lg w-full bg-neutral-900/90 border border-rose-900/50 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-xl text-center space-y-6">
         {/* Shield Icon */}
         <div className="relative inline-flex items-center justify-center">
           <div className="w-20 h-20 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-500 shadow-inner">
@@ -34,16 +89,13 @@ export const BlockedScreen: React.FC<BlockedScreenProps> = ({
         {/* Heading */}
         <div className="space-y-2">
           <span className="inline-block text-[11px] font-bold uppercase tracking-wider text-rose-400 bg-rose-950/60 border border-rose-800/40 px-3 py-1 rounded-full">
-            Security Restriction • সিকিউরিটি পলিসি
+            Security Restriction • নিরাপত্তা অ্যাক্সেস নিয়ন্ত্রণ
           </span>
           <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
             অ্যাক্সেস ব্লক করা হয়েছে / Access Restricted
           </h1>
           <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed max-w-md mx-auto">
             নিরাপত্তাজনিত কারণে অ্যাডমিনিস্ট্রেটর কর্তৃক আপনার এই ডিভাইসটিকে এই ওয়েবসাইটে প্রবেশ করা থেকে ব্লক করা হয়েছে।
-          </p>
-          <p className="text-[11px] text-neutral-400 font-mono">
-            Target Site: https://e-commerce-six-sage-15.vercel.app
           </p>
         </div>
 
@@ -106,7 +158,7 @@ export const BlockedScreen: React.FC<BlockedScreenProps> = ({
         <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-950/20 border border-amber-800/30 text-amber-300/90 text-left text-xs">
           <AlertTriangle size={16} className="shrink-0 mt-0.5 text-amber-400" />
           <p className="leading-relaxed">
-            যদি আপনি মনে করেন এটি একটি ভুল এবং আপনি বৈধ ইউজার, তবে অনুগ্রহ করে সাইট অ্যাডমিনের সাথে যোগাযোগ করুন:{' '}
+            যদি আপনি মনে করেন এটি একটি ভুল, তবে অনুগ্রহ করে সাইট অ্যাডমিনের সাথে যোগাযোগ করুন:{' '}
             <a
               href={`mailto:${contactEmail}`}
               className="text-amber-400 font-semibold underline hover:text-amber-300"
@@ -116,8 +168,8 @@ export const BlockedScreen: React.FC<BlockedScreenProps> = ({
           </p>
         </div>
 
-        {/* Action Button */}
-        <div>
+        {/* Action Buttons */}
+        <div className="space-y-2 pt-1">
           <button
             type="button"
             onClick={onRefresh}
@@ -126,13 +178,93 @@ export const BlockedScreen: React.FC<BlockedScreenProps> = ({
             <RefreshCw size={14} />
             <span>স্ট্যাটাস রিফ্রেশ করুন (Check Again)</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setShowAdminModal(true)}
+            className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-neutral-400 hover:text-neutral-200 text-[11px] font-medium transition-colors cursor-pointer"
+          >
+            <KeyRound size={12} />
+            <span>অ্যাডমিন রিকভারি / Admin Emergency Recovery</span>
+          </button>
         </div>
       </div>
+
+      {/* Emergency Admin Recovery Modal */}
+      {showAdminModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl relative">
+            <button
+              onClick={() => setShowAdminModal(false)}
+              className="absolute top-4 right-4 text-neutral-400 hover:text-white"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="space-y-1">
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <KeyRound size={16} className="text-amber-400" />
+                অ্যাডমিন রিকভারি লগইন
+              </h2>
+              <p className="text-xs text-neutral-400">
+                অ্যাডমিন ক্রেডেনশিয়াল দিলে এই ডিভাইসটি তাৎক্ষণিকভাবে আনব্লক হবে।
+              </p>
+            </div>
+
+            {adminSuccess ? (
+              <div className="p-3 bg-emerald-950/40 border border-emerald-800/40 rounded-xl text-emerald-400 text-xs flex items-center gap-2">
+                <CheckCircle2 size={16} />
+                <span>ডিভাইস সফলভাবে আনব্লক হয়েছে! সাইট লোড হচ্ছে...</span>
+              </div>
+            ) : (
+              <form onSubmit={handleAdminEmergencyUnlock} className="space-y-3">
+                {adminError && (
+                  <div className="p-2.5 bg-rose-950/40 border border-rose-800/40 rounded-lg text-rose-400 text-xs">
+                    {adminError}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-[11px] text-neutral-400 mb-1">অ্যাডমিন ইমেইল</label>
+                  <input
+                    type="email"
+                    required
+                    value={adminEmail}
+                    onChange={(e) => setAdminEmail(e.target.value)}
+                    placeholder="ifti30ahmed@gmail.com"
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-neutral-400 mb-1">পাসওয়ার্ড</label>
+                  <input
+                    type="password"
+                    required
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={adminLoading}
+                  className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-neutral-950 font-bold rounded-lg text-xs transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {adminLoading ? 'যাচাই করা হচ্ছে...' : 'ডিভাইস আনব্লক করুন'}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <footer className="mt-8 text-neutral-500 text-[11px] flex items-center gap-2">
         <Globe size={12} />
-        <span>E-Commerce Security Gateway • All Rights Reserved</span>
+        <span>E-Commerce Security Gateway • PickFinds Protection</span>
       </footer>
     </div>
   );

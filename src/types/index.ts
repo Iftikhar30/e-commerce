@@ -94,6 +94,7 @@ export interface UserAuth {
 
 export interface DeviceInfo {
   deviceId: string;
+  deviceHash?: string;
   ip?: string;
   browser: string;
   os: string;
@@ -107,7 +108,7 @@ export interface DeviceInfo {
 export interface LoginLog {
   id: string;
   email: string;
-  status: 'success' | 'failed';
+  status: 'success' | 'failed' | 'blocked';
   reason?: string;
   device: DeviceInfo;
   timestamp: string;
@@ -116,6 +117,7 @@ export interface LoginLog {
 export interface BlockedDevice {
   id: string; // matches deviceId or IP
   deviceId: string;
+  deviceHash?: string;
   ip?: string;
   browser?: string;
   os?: string;

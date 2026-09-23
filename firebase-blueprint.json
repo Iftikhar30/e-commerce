@@ -221,6 +221,96 @@
         }
       },
       "required": ["email", "role"]
+    },
+    "LoginLog": {
+      "title": "LoginLog",
+      "description": "Immutable security log of authentication attempts across all devices",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Unique log document identifier"
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Submitted login identifier / email (sanitized)"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["success", "failed", "blocked"],
+          "description": "Outcome of the login or access attempt"
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "Reason for failure or block"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp of the event"
+        },
+        "device": {
+          "type": "object",
+          "description": "Sanitized client hardware and browser metadata"
+        }
+      },
+      "required": ["id", "email", "status", "timestamp", "device"]
+    },
+    "BlockedDevice": {
+      "title": "BlockedDevice",
+      "description": "Security record for devices or IPs restricted from accessing the website",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Target device identifier or IP"
+        },
+        "deviceId": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Unique device identifier"
+        },
+        "ip": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Client IP detected at block time"
+        },
+        "browser": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Browser name"
+        },
+        "os": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Operating system"
+        },
+        "deviceType": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Form factor e.g. Desktop, Mobile, Tablet"
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "Reason for restricting access"
+        },
+        "blockedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp when restriction was enforced"
+        },
+        "blockedBy": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Admin identifier that enacted the block"
+        }
+      },
+      "required": ["id", "deviceId", "blockedAt"]
     }
   },
   "firestore": {
@@ -253,6 +343,18 @@
         "$ref": "#/entities/Admin"
       },
       "description": "Security whitelist of authenticated administrator user IDs"
+    },
+    "/login_logs/{logId}": {
+      "schema": {
+        "$ref": "#/entities/LoginLog"
+      },
+      "description": "Audit trail of admin login attempts"
+    },
+    "/blocked_devices/{deviceId}": {
+      "schema": {
+        "$ref": "#/entities/BlockedDevice"
+      },
+      "description": "Access restriction records enforced across the storefront"
     }
   }
 }

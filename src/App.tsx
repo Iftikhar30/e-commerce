@@ -22,7 +22,7 @@ import { AdManager } from './admin/AdManager';
 import { BlockedScreen } from './components/BlockedScreen';
 import { AdDisplaySlot } from './components/AdDisplaySlot';
 import { getCurrentDeviceInfo } from './lib/deviceFingerprint';
-import { subscribeToBlockedDevices, isDeviceBlockedCheck } from './lib/securityService';
+import { subscribeToBlockedDevices, subscribeToDeviceBlockStatus, isDeviceBlockedCheck } from './lib/securityService';
 import { subscribeToAds } from './lib/adService';
 import { Product, Banner, DeviceInfo, BlockedDevice, AdsterraAd } from './types';
 
@@ -80,20 +80,37 @@ const MainAppContent: React.FC = () => {
   useEffect(() => {
     if (!currentDevice) return;
 
-    // Real-time Firestore subscription to blocked devices (Works seamlessly on Vercel)
-    const unsubscribe = subscribeToBlockedDevices((blockedList) => {
-      const match = isDeviceBlockedCheck(currentDevice.deviceId, blockedList);
-      if (match) {
-        setBlockedRecord(match);
-      } else {
-        setBlockedRecord(null);
+    // Real-time Firestore document subscription for this device (Zero latency, live sync across devices)
+    const unsubscribeDeviceStatus = subscribeToDeviceBlockStatus(
+      currentDevice.deviceId,
+      currentDevice.deviceHash,
+      (record) => {
+        setBlockedRecord(record);
       }
-    });
+    );
+
+    // If logged in as admin, also subscribe to the full blocked devices collection
+    let unsubscribeAdminList: (() => void) | undefined;
+    if (user?.isAdmin) {
+      unsubscribeAdminList = subscribeToBlockedDevices((blockedList) => {
+        const match = isDeviceBlockedCheck(
+          currentDevice.deviceId,
+          blockedList,
+          currentDevice.deviceHash,
+          currentDevice.ip
+        );
+        // Only update if not admin
+        if (!user?.isAdmin) {
+          setBlockedRecord(match);
+        }
+      });
+    }
 
     return () => {
-      unsubscribe();
+      unsubscribeDeviceStatus();
+      if (unsubscribeAdminList) unsubscribeAdminList();
     };
-  }, [currentDevice]);
+  }, [currentDevice, user?.isAdmin]);
 
   // Modals for admin creation/editing
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
@@ -123,7 +140,8 @@ const MainAppContent: React.FC = () => {
   };
 
   // If this device is blocked by administrator, halt all access and show BlockedScreen
-  if (blockedRecord) {
+  // Admin device is NEVER blocked!
+  if (!user?.isAdmin && blockedRecord) {
     return (
       <BlockedScreen
         blockedInfo={blockedRecord}
@@ -132,6 +150,9 @@ const MainAppContent: React.FC = () => {
           getCurrentDeviceInfo().then((dev) => {
             setCurrentDevice(dev);
           });
+        }}
+        onAdminUnlocked={() => {
+          setBlockedRecord(null);
         }}
         contactEmail={settings?.contactEmail}
       />

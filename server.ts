@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
+import securityHandler from "./api/security";
 
 dotenv.config();
 
@@ -629,253 +630,24 @@ Return strictly JSON matching:
   });
 
   // ==========================================
-  // GLOBAL DEVICE SECURITY & BLOCKING APIS
+  // UNIFIED REAL-TIME FIRESTORE SECURITY API
   // ==========================================
-  interface ServerBlockedDevice {
-    id: string;
-    deviceId: string;
-    ip?: string;
-    browser?: string;
-    os?: string;
-    deviceType?: string;
-    reason?: string;
-    blockedAt: string;
-    blockedBy?: string;
-  }
-
-  interface ServerLoginLog {
-    id: string;
-    email: string;
-    status: 'success' | 'failed';
-    reason?: string;
-    device: {
-      deviceId: string;
-      ip?: string;
-      browser: string;
-      os: string;
-      deviceType: 'Desktop' | 'Mobile' | 'Tablet';
-      userAgent: string;
-      city?: string;
-      country?: string;
-      screenResolution?: string;
-    };
-    timestamp: string;
-  }
-
-  const BLOCKED_DEVICES_FILE = path.join(process.cwd(), 'data', 'blocked_devices.json');
-  const LOGIN_LOGS_FILE = path.join(process.cwd(), 'data', 'login_logs.json');
-
-  function loadBlockedDevices(): ServerBlockedDevice[] {
-    try {
-      if (fs.existsSync(BLOCKED_DEVICES_FILE)) {
-        const raw = fs.readFileSync(BLOCKED_DEVICES_FILE, 'utf-8');
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (e) {
-      console.warn('Error reading blocked devices file:', e);
-    }
-    return [];
-  }
-
-  function saveBlockedDevices(devices: ServerBlockedDevice[]) {
-    try {
-      const dir = path.dirname(BLOCKED_DEVICES_FILE);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(BLOCKED_DEVICES_FILE, JSON.stringify(devices, null, 2), 'utf-8');
-    } catch (e) {
-      console.warn('Error saving blocked devices file:', e);
-    }
-  }
-
-  function loadLoginLogs(): ServerLoginLog[] {
-    try {
-      if (fs.existsSync(LOGIN_LOGS_FILE)) {
-        const raw = fs.readFileSync(LOGIN_LOGS_FILE, 'utf-8');
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (e) {
-      console.warn('Error reading login logs file:', e);
-    }
-    return [];
-  }
-
-  function saveLoginLogs(logs: ServerLoginLog[]) {
-    try {
-      const dir = path.dirname(LOGIN_LOGS_FILE);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(LOGIN_LOGS_FILE, JSON.stringify(logs.slice(0, 300), null, 2), 'utf-8');
-    } catch (e) {
-      console.warn('Error saving login logs file:', e);
-    }
-  }
-
-  let globalBlockedDevices: ServerBlockedDevice[] = loadBlockedDevices();
-  let globalLoginLogs: ServerLoginLog[] = loadLoginLogs();
-
-  function getClientIp(req: express.Request): string {
-    const forwarded = req.headers['x-forwarded-for'];
-    if (typeof forwarded === 'string') {
-      const first = forwarded.split(',')[0].trim();
-      if (first) return first;
-    }
-    if (Array.isArray(forwarded) && forwarded.length > 0) {
-      return forwarded[0].trim();
-    }
-    const rawIp = req.socket.remoteAddress || req.ip || '127.0.0.1';
-    return rawIp.replace(/^::ffff:/, '');
-  }
-
-  // 1. Client IP lookup endpoint
   app.get("/api/client-ip", (req, res) => {
-    const ip = getClientIp(req);
+    const forwarded = req.headers['x-forwarded-for'];
+    let ip = '127.0.0.1';
+    if (typeof forwarded === 'string') {
+      ip = forwarded.split(',')[0].trim();
+    } else if (Array.isArray(forwarded) && forwarded.length > 0) {
+      ip = forwarded[0].trim();
+    } else if (req.socket.remoteAddress) {
+      ip = req.socket.remoteAddress.replace(/^::ffff:/, '');
+    }
     res.json({ ip, userAgent: req.headers['user-agent'] || '' });
   });
 
-  // 2. Check if the current requesting client is blocked
-  app.get("/api/security/check-client", (req, res) => {
-    const clientIp = getClientIp(req);
-    const deviceId = typeof req.query.deviceId === 'string' ? req.query.deviceId.trim() : '';
-
-    const matched = globalBlockedDevices.find((b) => {
-      if (deviceId && b.deviceId === deviceId) return true;
-      if (deviceId && b.id === deviceId) return true;
-      if (clientIp && b.ip === clientIp) return true;
-      if (clientIp && b.id === clientIp) return true;
-      return false;
-    });
-
-    res.json({
-      isBlocked: !!matched,
-      matchedRecord: matched || null,
-      clientIp,
-    });
-  });
-
-  // 3. Get all blocked devices
-  app.get("/api/security/blocked", (req, res) => {
-    res.json({ success: true, devices: globalBlockedDevices });
-  });
-
-  // 4. Block a device / IP
-  app.post("/api/security/block", (req, res) => {
-    const data: ServerBlockedDevice = req.body;
-    if (!data || (!data.deviceId && !data.ip && !data.id)) {
-      return res.status(400).json({ error: "Missing deviceId or IP" });
-    }
-
-    const id = data.id || data.deviceId || data.ip || `block_${Date.now()}`;
-    const entry: ServerBlockedDevice = {
-      id,
-      deviceId: data.deviceId || id,
-      ip: data.ip || '',
-      browser: data.browser || '',
-      os: data.os || '',
-      deviceType: data.deviceType || 'Desktop',
-      reason: data.reason || 'Blocked by administrator',
-      blockedAt: data.blockedAt || new Date().toISOString(),
-      blockedBy: data.blockedBy || 'admin',
-    };
-
-    // Remove existing if any
-    const existingIndex = globalBlockedDevices.findIndex(
-      (b) => b.id === entry.id || (entry.deviceId && b.deviceId === entry.deviceId)
-    );
-    if (existingIndex >= 0) {
-      globalBlockedDevices[existingIndex] = entry;
-    } else {
-      globalBlockedDevices.unshift(entry);
-    }
-
-    // Also block by IP if IP exists
-    if (entry.ip && entry.ip !== entry.deviceId && entry.ip !== '127.0.0.1') {
-      const ipEntry: ServerBlockedDevice = {
-        ...entry,
-        id: `ip_${entry.ip}`,
-      };
-      if (!globalBlockedDevices.some((b) => b.id === ipEntry.id || b.ip === entry.ip)) {
-        globalBlockedDevices.unshift(ipEntry);
-      }
-    }
-
-    saveBlockedDevices(globalBlockedDevices);
-
-    res.json({ success: true, device: entry, totalBlocked: globalBlockedDevices.length });
-  });
-
-  // 5. Unblock a device / IP
-  app.post("/api/security/unblock", (req, res) => {
-    const target = req.body?.id || req.body?.deviceId || req.body?.ip;
-    if (!target) {
-      return res.status(400).json({ error: "Missing identifier" });
-    }
-
-    for (let i = globalBlockedDevices.length - 1; i >= 0; i--) {
-      const b = globalBlockedDevices[i];
-      if (b.id === target || b.deviceId === target || b.ip === target) {
-        globalBlockedDevices.splice(i, 1);
-      }
-    }
-
-    saveBlockedDevices(globalBlockedDevices);
-    res.json({ success: true, remaining: globalBlockedDevices.length });
-  });
-
-  // 6. Record login attempt
-  app.post("/api/security/record-login", (req, res) => {
-    const data = req.body;
-    if (!data || !data.email) {
-      return res.status(400).json({ error: "Missing login details" });
-    }
-
-    const clientIp = getClientIp(req);
-    const newLog: ServerLoginLog = {
-      id: data.id || `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      email: data.email,
-      status: data.status === 'failed' ? 'failed' : 'success',
-      reason: data.reason,
-      device: {
-        deviceId: data.device?.deviceId || `dev_${Math.random().toString(36).substring(2, 9)}`,
-        ip: (data.device?.ip && data.device.ip !== 'Unknown IP') ? data.device.ip : clientIp,
-        browser: data.device?.browser || 'Unknown Browser',
-        os: data.device?.os || 'Unknown OS',
-        deviceType: data.device?.deviceType || 'Desktop',
-        userAgent: data.device?.userAgent || req.headers['user-agent'] || '',
-        city: data.device?.city,
-        country: data.device?.country,
-        screenResolution: data.device?.screenResolution,
-      },
-      timestamp: data.timestamp || new Date().toISOString(),
-    };
-
-    // Prevent duplicates
-    const existIdx = globalLoginLogs.findIndex((l) => l.id === newLog.id);
-    if (existIdx >= 0) {
-      globalLoginLogs[existIdx] = newLog;
-    } else {
-      globalLoginLogs.unshift(newLog);
-    }
-
-    if (globalLoginLogs.length > 300) {
-      globalLoginLogs.pop();
-    }
-
-    saveLoginLogs(globalLoginLogs);
-
-    res.json({ success: true, log: newLog, totalLogs: globalLoginLogs.length });
-  });
-
-  // 7. Get login logs
-  app.get("/api/security/logs", (req, res) => {
-    res.json({ success: true, logs: globalLoginLogs });
-  });
-
-  // 8. Clear login logs
-  app.post("/api/security/clear-logs", (req, res) => {
-    globalLoginLogs = [];
-    saveLoginLogs(globalLoginLogs);
-    res.json({ success: true, logs: [] });
+  // Unified security handler matching production Vercel
+  app.all(["/api/security", "/api/security/*"], (req, res) => {
+    securityHandler(req, res);
   });
 
   // Vite middleware in dev or static serving in production

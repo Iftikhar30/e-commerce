@@ -5,7 +5,8 @@ import {
   onAuthStateChanged,
   User,
 } from 'firebase/auth';
-import { auth, isFirebaseConfigured } from '../lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db, isFirebaseConfigured } from '../lib/firebase';
 import { UserAuth } from '../types';
 
 interface AuthContextType {
@@ -20,8 +21,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const LOCAL_ADMIN_KEY = 'affiliate_store_admin_session';
-
 function formatAuthError(err: unknown): string {
   if (err && typeof err === 'object' && 'code' in err) {
     const code = String((err as { code: string }).code);
@@ -29,7 +28,7 @@ function formatAuthError(err: unknown): string {
       return 'Incorrect email or password. Please verify your credentials.';
     }
     if (code === 'auth/user-not-found') {
-      return 'No account found with this email. Admin accounts must be created directly in Firebase Console.';
+      return 'No account found with this email. Admin accounts must be created in Firebase Console.';
     }
     if (code === 'auth/invalid-email') {
       return 'Please enter a valid email address.';
@@ -44,6 +43,32 @@ function formatAuthError(err: unknown): string {
   return err instanceof Error ? err.message : 'Authentication failed. Please check your credentials.';
 }
 
+async function verifyAdminPrivilege(firebaseUser: User): Promise<boolean> {
+  const email = (firebaseUser.email || '').toLowerCase().trim();
+  // 1. Master bootstrap admin
+  if (email === 'ifti30ahmed@gmail.com') {
+    return true;
+  }
+
+  // 2. Check Firestore /admins/{uid}
+  if (db) {
+    try {
+      const snap = await getDoc(doc(db, 'admins', firebaseUser.uid));
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data && (data.role === 'admin' || data.role === 'superadmin')) {
+          return true;
+        }
+      }
+    } catch {
+      // If rules deny or document not found
+    }
+  }
+
+  // Default: Store is single-admin ecommerce store, authenticated Firebase users are admins
+  return true;
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserAuth | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -51,12 +76,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     if (isFirebaseConfigured && auth) {
-      const unsubscribe = onAuthStateChanged(auth, (firebaseUser: User | null) => {
+      const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: User | null) => {
         if (firebaseUser) {
+          const isAdmin = await verifyAdminPrivilege(firebaseUser);
           setUser({
             uid: firebaseUser.uid,
             email: firebaseUser.email,
-            isAdmin: true,
+            isAdmin,
           });
         } else {
           setUser(null);
@@ -65,15 +91,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       return () => unsubscribe();
     } else {
-      // Local demo auth check
-      const localAdmin = localStorage.getItem(LOCAL_ADMIN_KEY);
-      if (localAdmin) {
-        try {
-          setUser(JSON.parse(localAdmin));
-        } catch {
-          setUser(null);
-        }
-      }
       setLoading(false);
     }
   }, []);
@@ -85,10 +102,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isFirebaseConfigured && auth) {
       try {
         const cred = await signInWithEmailAndPassword(auth, email.trim(), pass);
+        const isAdmin = await verifyAdminPrivilege(cred.user);
         setUser({
           uid: cred.user.uid,
           email: cred.user.email,
-          isAdmin: true,
+          isAdmin,
         });
       } catch (err: unknown) {
         const msg = formatAuthError(err);
@@ -100,23 +118,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    // Local demo login fallback if Firebase credentials not set yet
-    await new Promise((res) => setTimeout(res, 400));
-    if (email.trim() && pass.length >= 6) {
-      const adminData: UserAuth = {
-        uid: 'demo_admin_uid',
-        email: email.trim(),
-        isAdmin: true,
-      };
-      localStorage.setItem(LOCAL_ADMIN_KEY, JSON.stringify(adminData));
-      setUser(adminData);
-      setLoading(false);
-    } else {
-      setLoading(false);
-      const msg = 'Invalid credentials. Password must be at least 6 characters.';
-      setError(msg);
-      throw new Error(msg);
-    }
+    setLoading(false);
+    throw new Error('Firebase Authentication is not configured.');
   };
 
   const logout = async () => {
@@ -127,7 +130,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('Sign out error:', err);
       }
     }
-    localStorage.removeItem(LOCAL_ADMIN_KEY);
     setUser(null);
   };
 
