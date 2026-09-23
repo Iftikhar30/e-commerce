@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   ShieldAlert,
   Ban,
@@ -6,15 +6,8 @@ import {
   AlertTriangle,
   Globe,
   Laptop,
-  KeyRound,
-  X,
-  CheckCircle2,
 } from 'lucide-react';
 import { BlockedDevice, DeviceInfo } from '../types';
-import { signInWithEmailAndPassword, signOut as firebaseSignOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
-import { unblockDevice, recordLoginAttempt } from '../lib/securityService';
 
 interface BlockedScreenProps {
   blockedInfo: BlockedDevice | null;
@@ -29,68 +22,7 @@ export const BlockedScreen: React.FC<BlockedScreenProps> = ({
   deviceInfo,
   onRefresh,
   contactEmail = 'Iftikharcpa30@gmail.com',
-  onAdminUnlocked,
 }) => {
-  const [showAdminModal, setShowAdminModal] = useState(false);
-  const [adminEmail, setAdminEmail] = useState('');
-  const [adminPassword, setAdminPassword] = useState('');
-  const [adminError, setAdminError] = useState('');
-  const [adminLoading, setAdminLoading] = useState(false);
-  const [adminSuccess, setAdminSuccess] = useState(false);
-
-  const handleAdminEmergencyUnlock = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAdminError('');
-    setAdminLoading(true);
-
-    try {
-      if (!auth) {
-        throw new Error('Firebase Auth not available.');
-      }
-      const cred = await signInWithEmailAndPassword(auth, adminEmail.trim(), adminPassword);
-      if (!db) {
-        throw new Error('Database connection unavailable.');
-      }
-
-      // Strict UID-based verification: check if document exists in /admins/{uid}
-      const adminDocRef = doc(db, 'admins', cred.user.uid);
-      const adminDocSnap = await getDoc(adminDocRef);
-
-      if (adminDocSnap.exists()) {
-        const targetDevId = deviceInfo?.deviceId || blockedInfo?.deviceId;
-        if (targetDevId) {
-          await unblockDevice(targetDevId);
-        }
-        setAdminSuccess(true);
-        setTimeout(() => {
-          if (onAdminUnlocked) onAdminUnlocked();
-          onRefresh();
-        }, 1200);
-      } else {
-        await firebaseSignOut(auth);
-        throw new Error('Access denied. This account UID is not registered in the /admins whitelist.');
-      }
-    } catch (err: unknown) {
-      const code =
-        err && typeof err === 'object' && 'code' in err
-          ? String((err as { code?: string }).code)
-          : undefined;
-      const targetDevId = deviceInfo?.deviceId || blockedInfo?.deviceId || 'blocked_device';
-      recordLoginAttempt({
-        email: adminEmail.trim() || 'unknown@user.com',
-        status: 'failed',
-        reason: 'Emergency unlock failed - invalid credentials',
-        errorCode: code || 'auth/invalid-credential',
-        deviceId: targetDevId,
-        device: deviceInfo || undefined,
-      }).catch(() => {});
-
-      setAdminError(err instanceof Error ? err.message : 'Invalid Admin Credentials');
-    } finally {
-      setAdminLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-neutral-950 text-white flex flex-col items-center justify-center p-4 sm:p-6 selection:bg-rose-500 selection:text-white relative">
       {/* Background radial glow */}
@@ -191,8 +123,8 @@ export const BlockedScreen: React.FC<BlockedScreenProps> = ({
           </p>
         </div>
 
-        {/* Action Buttons */}
-        <div className="space-y-2 pt-1">
+        {/* Action Button */}
+        <div className="pt-1">
           <button
             type="button"
             onClick={onRefresh}
@@ -201,88 +133,8 @@ export const BlockedScreen: React.FC<BlockedScreenProps> = ({
             <RefreshCw size={14} />
             <span>Reload</span>
           </button>
-
-          <button
-            type="button"
-            onClick={() => setShowAdminModal(true)}
-            className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-neutral-400 hover:text-neutral-200 text-[11px] font-medium transition-colors cursor-pointer"
-          >
-            <KeyRound size={12} />
-            <span>Admin Emergency Recovery</span>
-          </button>
         </div>
       </div>
-
-      {/* Emergency Admin Recovery Modal */}
-      {showAdminModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-neutral-700 rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl relative">
-            <button
-              onClick={() => setShowAdminModal(false)}
-              className="absolute top-4 right-4 text-neutral-400 hover:text-white"
-            >
-              <X size={18} />
-            </button>
-
-            <div className="space-y-1">
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <KeyRound size={16} className="text-amber-400" />
-                Admin Emergency Recovery
-              </h2>
-              <p className="text-xs text-neutral-400">
-                Enter admin credentials to immediately unblock this device.
-              </p>
-            </div>
-
-            {adminSuccess ? (
-              <div className="p-3 bg-emerald-950/40 border border-emerald-800/40 rounded-xl text-emerald-400 text-xs flex items-center gap-2">
-                <CheckCircle2 size={16} />
-                <span>Device unblocked successfully! Loading site...</span>
-              </div>
-            ) : (
-              <form onSubmit={handleAdminEmergencyUnlock} className="space-y-3">
-                {adminError && (
-                  <div className="p-2.5 bg-rose-950/40 border border-rose-800/40 rounded-lg text-rose-400 text-xs">
-                    {adminError}
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-[11px] text-neutral-400 mb-1">Admin Email</label>
-                  <input
-                    type="email"
-                    required
-                    value={adminEmail}
-                    onChange={(e) => setAdminEmail(e.target.value)}
-                    placeholder="ifti30ahmed@gmail.com"
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-neutral-400 mb-1">Password</label>
-                  <input
-                    type="password"
-                    required
-                    value={adminPassword}
-                    onChange={(e) => setAdminPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={adminLoading}
-                  className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-neutral-950 font-bold rounded-lg text-xs transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  {adminLoading ? 'Verifying...' : 'Unlock Device'}
-                </button>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Footer */}
       <footer className="mt-8 text-neutral-500 text-[11px] flex items-center gap-2">
