@@ -1,5 +1,5 @@
 rules_version = '2';
-serviceservice cloud.firestore {
+service cloud.firestore {
   match /databases/{database}/documents {
 
     // ----------------------------------------------------
@@ -14,14 +14,10 @@ serviceservice cloud.firestore {
     }
 
     // Secure Admin Authorization:
-    // 1. Never grants admin to arbitrary authenticated users.
-    // 2. Checks trusted server-side whitelist in /admins/{uid}
-    // 3. Or bootstrap master admin email (ifti30ahmed@gmail.com) with verified email.
+    // 1. Strictly UID-based: checks if request.auth.uid exists in /admins/{uid}.
+    // 2. Zero hardcoded emails or secrets in rules.
     function isAdmin() {
-      return isSignedIn() && (
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-        (request.auth.token.email == 'ifti30ahmed@gmail.com' && request.auth.token.email_verified == true)
-      );
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
     // Default Deny: Catch-all block on any unspecified paths
@@ -48,7 +44,7 @@ serviceservice cloud.firestore {
     // 3. Categories: Public read, Admin write
     match /categories/{categoryId} {
       allow read: if true;
-      allow write: if isAisAdmisAisAdmindminindmin();
+      allow write: if isAdmin();
     }
 
     // 4. Storefront Settings: Public read, Admin write
@@ -65,7 +61,8 @@ serviceservice cloud.firestore {
 
     // 6. Login Logs:
     // - Read / List / Delete are STRICTLY restricted to Admin (Zero public log scraping).
-    // - Create allows sanitized login attempts with strictly zero password fields allowed.
+    // - Create is allowed for Admin OR strictly validated sanitized login attempt records with ZERO passwords.
+    //   All login events are captured through the trusted Vercel Serverless API using Firebase Admin SDK.
     // - Update is completely denied (immutable audit log).
     match /login_logs/{logId} {
       allow read, list, delete: if isAdmin();
@@ -93,10 +90,12 @@ serviceservice cloud.firestore {
     }
 
     // 8. Admin Whitelist:
-    // - Only existing admins can read the admin list.
-    // - Normal users cannot write or escalate themselves.
+    // - Authenticated users can check if their own UID is registered, and Admins can list.
+    // - Writing is denied to all client users (preventing self-promotion/privilege escalation).
+    // - Master admin documents are securely created in Firebase Console.
     match /admins/{uid} {
-      allow read: if isAdmin();
+      allow get: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
       allow write: if false;
     }
   }

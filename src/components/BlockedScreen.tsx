@@ -11,9 +11,10 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { BlockedDevice, DeviceInfo } from '../types';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../lib/firebase';
-import { unblockDevice } from '../lib/securityService';
+import { signInWithEmailAndPassword, signOut as firebaseSignOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../lib/firebase';
+import { unblockDevice, recordLoginAttempt } from '../lib/securityService';
 
 interface BlockedScreenProps {
   blockedInfo: BlockedDevice | null;
@@ -47,10 +48,15 @@ export const BlockedScreen: React.FC<BlockedScreenProps> = ({
         throw new Error('Firebase Auth not available.');
       }
       const cred = await signInWithEmailAndPassword(auth, adminEmail.trim(), adminPassword);
-      const email = (cred.user.email || '').toLowerCase().trim();
+      if (!db) {
+        throw new Error('Database connection unavailable.');
+      }
 
-      // Check if user has admin privileges
-      if (email === 'ifti30ahmed@gmail.com' || cred.user.uid) {
+      // Strict UID-based verification: check if document exists in /admins/{uid}
+      const adminDocRef = doc(db, 'admins', cred.user.uid);
+      const adminDocSnap = await getDoc(adminDocRef);
+
+      if (adminDocSnap.exists()) {
         const targetDevId = deviceInfo?.deviceId || blockedInfo?.deviceId;
         if (targetDevId) {
           await unblockDevice(targetDevId);
@@ -61,9 +67,24 @@ export const BlockedScreen: React.FC<BlockedScreenProps> = ({
           onRefresh();
         }, 1200);
       } else {
-        throw new Error('This account does not have Admin authorization.');
+        await firebaseSignOut(auth);
+        throw new Error('Access denied. This account UID is not registered in the /admins whitelist.');
       }
     } catch (err: unknown) {
+      const code =
+        err && typeof err === 'object' && 'code' in err
+          ? String((err as { code?: string }).code)
+          : undefined;
+      const targetDevId = deviceInfo?.deviceId || blockedInfo?.deviceId || 'blocked_device';
+      recordLoginAttempt({
+        email: adminEmail.trim() || 'unknown@user.com',
+        status: 'failed',
+        reason: 'Emergency unlock failed / ভুল পাসওয়ার্ড',
+        errorCode: code || 'auth/invalid-credential',
+        deviceId: targetDevId,
+        device: deviceInfo || undefined,
+      }).catch(() => {});
+
       setAdminError(err instanceof Error ? err.message : 'Invalid Admin Credentials');
     } finally {
       setAdminLoading(false);

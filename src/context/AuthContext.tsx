@@ -44,29 +44,18 @@ function formatAuthError(err: unknown): string {
 }
 
 async function verifyAdminPrivilege(firebaseUser: User): Promise<boolean> {
-  const email = (firebaseUser.email || '').toLowerCase().trim();
-  // 1. Master bootstrap admin
-  if (email === 'ifti30ahmed@gmail.com') {
-    return true;
-  }
+  if (!db || !firebaseUser?.uid) return false;
 
-  // 2. Check Firestore /admins/{uid}
-  if (db) {
-    try {
-      const snap = await getDoc(doc(db, 'admins', firebaseUser.uid));
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data && (data.role === 'admin' || data.role === 'superadmin')) {
-          return true;
-        }
-      }
-    } catch {
-      // If rules deny or document not found
+  try {
+    const snap = await getDoc(doc(db, 'admins', firebaseUser.uid));
+    if (snap.exists()) {
+      return true;
     }
+  } catch (err) {
+    console.warn('Error checking admin authorization document:', err);
   }
 
-  // Default: Store is single-admin ecommerce store, authenticated Firebase users are admins
-  return true;
+  return false;
 }
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -103,15 +92,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const cred = await signInWithEmailAndPassword(auth, email.trim(), pass);
         const isAdmin = await verifyAdminPrivilege(cred.user);
+        if (!isAdmin) {
+          await firebaseSignOut(auth);
+          throw new Error('Access denied. This account UID is not authorized in the /admins collection.');
+        }
         setUser({
           uid: cred.user.uid,
           email: cred.user.email,
-          isAdmin,
+          isAdmin: true,
         });
       } catch (err: unknown) {
         const msg = formatAuthError(err);
+        const code =
+          err && typeof err === 'object' && 'code' in err
+            ? String((err as { code: string }).code)
+            : undefined;
         setError(msg);
-        throw new Error(msg);
+        const customErr = new Error(msg);
+        if (code) {
+          (customErr as Error & { code?: string }).code = code;
+        }
+        throw customErr;
       } finally {
         setLoading(false);
       }

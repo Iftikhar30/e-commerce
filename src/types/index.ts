@@ -95,9 +95,12 @@ export interface UserAuth {
 export interface DeviceInfo {
   deviceId: string;
   deviceHash?: string;
+  canvasHash?: string;
   ip?: string;
   browser: string;
   os: string;
+  platform?: string;
+  screen?: string;
   deviceType: 'Desktop' | 'Mobile' | 'Tablet';
   userAgent: string;
   city?: string;
@@ -110,6 +113,13 @@ export interface LoginLog {
   email: string;
   status: 'success' | 'failed' | 'blocked';
   reason?: string;
+  errorCode?: string;
+  deviceId?: string;
+  ip?: string;
+  userAgent?: string;
+  platform?: string;
+  screen?: string;
+  canvasHash?: string;
   device: DeviceInfo;
   timestamp: string;
 }

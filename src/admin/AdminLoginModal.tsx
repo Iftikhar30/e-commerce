@@ -64,11 +64,17 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
           ? authErr.message
           : 'Wrong password or authentication failed / ভুল পাসওয়ার্ড';
 
-      // Always record failed attempt immediately
+      const errorCode =
+        authErr && typeof authErr === 'object' && 'code' in authErr
+          ? String((authErr as { code?: string }).code)
+          : undefined;
+
+      // Always record failed attempt immediately with sanitized error code and device info
       await recordLoginAttempt({
         email: inputEmail || 'unknown@user.com',
         status: 'failed',
         reason: failureReason,
+        errorCode,
         device: deviceInfo,
       }).catch((err) => console.warn('Record login failure error:', err));
 

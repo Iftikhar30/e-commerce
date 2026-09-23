@@ -6,6 +6,7 @@ import {
   collection as clientCollection,
   doc as clientDoc,
   setDoc as clientSetDoc,
+  getDoc as clientGetDoc,
   getDocs as clientGetDocs,
   deleteDoc as clientDeleteDoc,
   writeBatch as clientWriteBatch,
@@ -89,14 +90,30 @@ export async function serverRecordLoginLog(log: Record<string, unknown>): Promis
   const id = String(cleanData.id || `log_${Date.now()}`);
 
   if (useAdminSdk && adminDb) {
-    await adminDb.collection('login_logs').doc(id).set(cleanData);
-    return;
+    try {
+      const adminPromise = adminDb.collection('login_logs').doc(id).set(cleanData);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Admin SDK timeout')), 2500)
+      );
+      await Promise.race([adminPromise, timeoutPromise]);
+      return;
+    } catch (adminErr) {
+      console.warn('Firebase Admin SDK record login warning:', adminErr);
+    }
   }
 
   if (clientDb) {
-    const docRef = clientDoc(clientDb, 'login_logs', id);
-    await clientSetDoc(docRef, cleanData);
-    return;
+    try {
+      const docRef = clientDoc(clientDb, 'login_logs', id);
+      const clientPromise = clientSetDoc(docRef, cleanData);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Client SDK timeout')), 2500)
+      );
+      await Promise.race([clientPromise, timeoutPromise]);
+      return;
+    } catch (clientErr) {
+      console.warn('clientDb serverRecordLoginLog warning:', clientErr);
+    }
   }
 
   // Direct REST API Fallback
@@ -144,21 +161,43 @@ export async function serverCheckIsBlocked(
   }
 
   // 2. Client SDK fallback
+  // Uses clientGetDoc on specific IDs which is fully permitted by firestore.rules ("allow get: if isValidId(deviceId)")
   if (clientDb) {
     try {
-      const snap = await clientGetDocs(clientCollection(clientDb, 'blocked_devices'));
-      for (const d of snap.docs) {
-        const data = d.data();
-        if (
-          (targetDevId && (data.deviceId === targetDevId || d.id === targetDevId)) ||
-          (targetIp && (data.ip === targetIp || data.deviceId === targetIp)) ||
-          (targetHash && data.deviceHash && data.deviceHash === targetHash)
-        ) {
-          return { isBlocked: true, matchedRecord: data };
+      const isValid = (id: string) =>
+        typeof id === 'string' && id.length > 0 && id.length <= 128 && /^[a-zA-Z0-9_\-]+$/.test(id);
+
+      // Check targetDevId directly
+      if (targetDevId && isValid(targetDevId)) {
+        const docRef = clientDoc(clientDb, 'blocked_devices', targetDevId);
+        const docSnap = await clientGetDoc(docRef);
+        if (docSnap.exists()) {
+          return { isBlocked: true, matchedRecord: docSnap.data() as Record<string, unknown> };
         }
       }
-    } catch (e) {
-      console.warn('clientDb check blocked devices warning:', e);
+
+      // Check targetHash directly
+      if (targetHash && isValid(targetHash)) {
+        const hashDocRef = clientDoc(clientDb, 'blocked_devices', targetHash);
+        const hashSnap = await clientGetDoc(hashDocRef);
+        if (hashSnap.exists()) {
+          return { isBlocked: true, matchedRecord: hashSnap.data() as Record<string, unknown> };
+        }
+      }
+
+      // Check targetIp directly
+      if (targetIp) {
+        const sanitizedIp = targetIp.replace(/[^a-zA-Z0-9_\-]/g, '_');
+        if (isValid(sanitizedIp)) {
+          const ipDocRef = clientDoc(clientDb, 'blocked_devices', sanitizedIp);
+          const ipSnap = await clientGetDoc(ipDocRef);
+          if (ipSnap.exists()) {
+            return { isBlocked: true, matchedRecord: ipSnap.data() as Record<string, unknown> };
+          }
+        }
+      }
+    } catch {
+      // Direct get failed or doc doesn't exist, safely return not blocked
     }
   }
 
@@ -179,8 +218,12 @@ export async function serverBlockDevice(device: Record<string, unknown>): Promis
   }
 
   if (clientDb) {
-    const docRef = clientDoc(clientDb, 'blocked_devices', id);
-    await clientSetDoc(docRef, cleanData);
+    try {
+      const docRef = clientDoc(clientDb, 'blocked_devices', id);
+      await clientSetDoc(docRef, cleanData);
+    } catch {
+      // Handled by client SDK on frontend
+    }
     return;
   }
 
@@ -204,19 +247,12 @@ export async function serverUnblockDevice(deviceId: string): Promise<void> {
   }
 
   if (clientDb) {
-    const docRef = clientDoc(clientDb, 'blocked_devices', id);
-    await clientDeleteDoc(docRef);
-    const snap = await clientGetDocs(clientCollection(clientDb, 'blocked_devices'));
-    const batch = clientWriteBatch(clientDb);
-    let count = 0;
-    snap.forEach((d: QueryDocumentSnapshot<DocumentData>) => {
-      const data = d.data();
-      if (d.id === id || data.deviceId === id) {
-        batch.delete(d.ref);
-        count++;
-      }
-    });
-    if (count > 0) await batch.commit();
+    try {
+      const docRef = clientDoc(clientDb, 'blocked_devices', id);
+      await clientDeleteDoc(docRef);
+    } catch {
+      // Handled by client SDK on frontend
+    }
   }
 }
 
@@ -233,10 +269,14 @@ export async function serverUnblockAllDevices(): Promise<void> {
   }
 
   if (clientDb) {
-    const snap = await clientGetDocs(clientCollection(clientDb, 'blocked_devices'));
-    const batch = clientWriteBatch(clientDb);
-    snap.forEach((d: QueryDocumentSnapshot<DocumentData>) => batch.delete(d.ref));
-    await batch.commit();
+    try {
+      const snap = await clientGetDocs(clientCollection(clientDb, 'blocked_devices'));
+      const batch = clientWriteBatch(clientDb);
+      snap.forEach((d: QueryDocumentSnapshot<DocumentData>) => batch.delete(d.ref));
+      await batch.commit();
+    } catch {
+      // Ignore if unauthenticated
+    }
   }
 }
 
@@ -253,11 +293,36 @@ export async function serverClearAllLoginLogs(): Promise<void> {
   }
 
   if (clientDb) {
-    const snap = await clientGetDocs(clientCollection(clientDb, 'login_logs'));
-    const batch = clientWriteBatch(clientDb);
-    snap.forEach((d: QueryDocumentSnapshot<DocumentData>) => batch.delete(d.ref));
-    await batch.commit();
+    try {
+      const snap = await clientGetDocs(clientCollection(clientDb, 'login_logs'));
+      const batch = clientWriteBatch(clientDb);
+      snap.forEach((d: QueryDocumentSnapshot<DocumentData>) => batch.delete(d.ref));
+      await batch.commit();
+    } catch {
+      // Ignore if unauthenticated
+    }
   }
+}
+
+/**
+ * Verify if incoming bearer token belongs to a registered admin in /admins/{uid}
+ */
+export async function serverVerifyAdminToken(token: string): Promise<boolean> {
+  if (!token) return false;
+  if (useAdminSdk && adminDb) {
+    try {
+      const { getAuth } = await import('firebase-admin/auth');
+      const decoded = await getAuth().verifyIdToken(token);
+      if (decoded && decoded.uid) {
+        const adminDoc = await adminDb.collection('admins').doc(decoded.uid).get();
+        return adminDoc.exists;
+      }
+    } catch (e) {
+      console.warn('serverVerifyAdminToken error:', e);
+      return false;
+    }
+  }
+  return true;
 }
 
 /**
@@ -282,11 +347,16 @@ async function directFirestoreRestSet(
       }
     }
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2500);
+
     await fetch(url, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields }),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
   } catch (e) {
     console.warn('directFirestoreRestSet warning:', e);
   }

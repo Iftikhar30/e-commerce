@@ -11,65 +11,143 @@ import {
   getDocs,
   getDoc,
 } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from './firebase';
+import { db, auth, isFirebaseConfigured } from './firebase';
 import { LoginLog, BlockedDevice, DeviceInfo } from '../types';
 
 function stripUndefined<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj));
 }
 
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (auth && auth.currentUser) {
+    try {
+      const token = await auth.currentUser.getIdToken();
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+    } catch {
+      // ignore
+    }
+  }
+  return headers;
+}
+
 /**
  * Record a login or access attempt
- * 1. Sends to serverless /api/security?action=record-attempt (extracts genuine IP & user-agent server-side)
- * 2. Writes to Firestore 'login_logs' (broadcasts in real-time to all admin consoles)
- * 3. Strips all passwords and sensitive data unconditionally
+ * 1. Primary trusted path: Sends to serverless /api/security?action=record-attempt
+ *    (Extracts real client IP server-side, validates payload, and writes via Firebase Admin SDK)
+ * 2. Unconditionally strips all passwords and sensitive data
  */
 export async function recordLoginAttempt(data: {
   email: string;
   status: 'success' | 'failed' | 'blocked';
   reason?: string;
-  device: DeviceInfo;
+  errorCode?: string;
+  device?: DeviceInfo;
+  deviceId?: string;
+  deviceInfo?: Partial<DeviceInfo>;
 }): Promise<LoginLog> {
   const logId = `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const cleanEmail = (data.email || 'Admin').trim().slice(0, 100);
-  const cleanReason = (data.reason || (data.status === 'failed' ? 'Wrong password' : 'Login event')).slice(0, 250);
+
+  // Sanitize errorCode
+  let sanitizedErrorCode = data.errorCode;
+  if (sanitizedErrorCode) {
+    sanitizedErrorCode = String(sanitizedErrorCode).trim().toLowerCase();
+    if (!/^auth\/[a-z0-9\-_]{3,40}$/.test(sanitizedErrorCode)) {
+      sanitizedErrorCode = 'auth/invalid-credential';
+    }
+  }
+
+  // Construct readable reason
+  let cleanReason = (data.reason || '').trim().slice(0, 250);
+  if (!cleanReason) {
+    if (data.status === 'failed') {
+      cleanReason = sanitizedErrorCode
+        ? `Authentication failed (${sanitizedErrorCode})`
+        : 'Invalid credentials / ভুল পাসওয়ার্ড';
+    } else if (data.status === 'blocked') {
+      cleanReason = 'Access restricted - blocked device';
+    } else {
+      cleanReason = 'Admin session established';
+    }
+  }
+
+  const incomingDevice = data.device || (data.deviceInfo as DeviceInfo) || {};
+  const cleanDeviceId = data.deviceId || incomingDevice.deviceId || `dev_${Date.now()}`;
+  const cleanUserAgent = incomingDevice.userAgent || (typeof navigator !== 'undefined' ? navigator.userAgent : '');
+  const cleanPlatform = incomingDevice.platform || incomingDevice.os || 'Unknown OS';
+  const cleanScreen = incomingDevice.screen || incomingDevice.screenResolution;
+  const cleanCanvasHash = incomingDevice.canvasHash || incomingDevice.deviceHash;
+
+  const devObj: DeviceInfo = {
+    deviceId: cleanDeviceId,
+    deviceHash: cleanCanvasHash,
+    canvasHash: cleanCanvasHash,
+    ip: incomingDevice.ip || 'Unknown IP',
+    browser: incomingDevice.browser || 'Browser',
+    os: incomingDevice.os || 'OS',
+    platform: cleanPlatform,
+    screen: cleanScreen,
+    deviceType: incomingDevice.deviceType || 'Desktop',
+    userAgent: cleanUserAgent,
+    city: incomingDevice.city,
+    country: incomingDevice.country,
+    screenResolution: cleanScreen,
+  };
 
   const cleanLog: LoginLog = {
     id: logId,
     email: cleanEmail,
     status: data.status,
     reason: cleanReason,
-    device: {
-      deviceId: data.device?.deviceId || `dev_${Date.now()}`,
-      deviceHash: data.device?.deviceHash,
-      ip: data.device?.ip || 'Unknown IP',
-      browser: data.device?.browser || 'Browser',
-      os: data.device?.os || 'OS',
-      deviceType: data.device?.deviceType || 'Desktop',
-      userAgent: data.device?.userAgent || (typeof navigator !== 'undefined' ? navigator.userAgent : ''),
-      city: data.device?.city,
-      country: data.device?.country,
-      screenResolution: data.device?.screenResolution,
-    },
+    errorCode: sanitizedErrorCode,
+    deviceId: cleanDeviceId,
+    ip: devObj.ip,
+    userAgent: cleanUserAgent,
+    platform: cleanPlatform,
+    screen: cleanScreen,
+    canvasHash: cleanCanvasHash,
+    device: devObj,
     timestamp: new Date().toISOString(),
   };
 
-  // 1. Send to serverless API endpoint (Captures verified client IP from server headers)
-  fetch('/api/security?action=record-attempt', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(cleanLog),
-  }).catch(() => {
-    // ignore network errors if offline
-  });
+  // 1. Primary Trusted Path: Serverless API endpoint
+  // Writes via server-side Admin SDK and stamps real client IP
+  try {
+    const authHeaders = await getAuthHeaders();
+    await fetch('/api/security?action=record-attempt', {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        id: logId,
+        status: data.status,
+        email: cleanEmail,
+        deviceId: cleanDeviceId,
+        errorCode: sanitizedErrorCode,
+        reason: cleanReason,
+        deviceInfo: {
+          userAgent: cleanUserAgent,
+          platform: cleanPlatform,
+          screen: cleanScreen,
+          canvasHash: cleanCanvasHash,
+          browser: devObj.browser,
+          os: devObj.os,
+          deviceType: devObj.deviceType,
+        },
+        device: devObj,
+      }),
+    });
+  } catch (err) {
+    console.warn('Serverless record-attempt non-blocking notice:', err);
+  }
 
-  // 2. Direct Firestore write (Centralized Real-Time Source of Truth)
+  // 2. Direct client Firestore write fallback with same deterministic logId
   if (isFirebaseConfigured && db) {
     try {
       const logRef = doc(db, 'login_logs', logId);
       await setDoc(logRef, stripUndefined(cleanLog));
-    } catch (err) {
-      console.warn('Firestore recordLoginAttempt error:', err);
+    } catch {
+      // Server-side path has already recorded the attempt
     }
   }
 
@@ -106,11 +184,13 @@ export async function blockDevice(device: BlockedDevice): Promise<void> {
   }
 
   // 2. Notify Serverless backend
-  fetch('/api/security?action=block', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(blockRecord),
-  }).catch(() => {});
+  getAuthHeaders().then((headers) => {
+    fetch('/api/security?action=block', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(blockRecord),
+    }).catch(() => {});
+  });
 }
 
 /**
@@ -146,11 +226,13 @@ export async function unblockDevice(deviceId: string): Promise<void> {
   }
 
   // 2. Notify Serverless backend
-  fetch('/api/security?action=unblock', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ deviceId: targetId }),
-  }).catch(() => {});
+  getAuthHeaders().then((headers) => {
+    fetch('/api/security?action=unblock', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ deviceId: targetId }),
+    }).catch(() => {});
+  });
 }
 
 /**
@@ -168,9 +250,12 @@ export async function unblockAllDevices(): Promise<void> {
     }
   }
 
-  fetch('/api/security?action=unblock-all', {
-    method: 'POST',
-  }).catch(() => {});
+  getAuthHeaders().then((headers) => {
+    fetch('/api/security?action=unblock-all', {
+      method: 'POST',
+      headers,
+    }).catch(() => {});
+  });
 }
 
 /**
@@ -188,9 +273,12 @@ export async function clearAllLoginLogs(): Promise<void> {
     }
   }
 
-  fetch('/api/security?action=clear-logs', {
-    method: 'POST',
-  }).catch(() => {});
+  getAuthHeaders().then((headers) => {
+    fetch('/api/security?action=clear-logs', {
+      method: 'POST',
+      headers,
+    }).catch(() => {});
+  });
 }
 
 /**

@@ -6,6 +6,7 @@ import {
   serverUnblockDevice,
   serverUnblockAllDevices,
   serverClearAllLoginLogs,
+  serverVerifyAdminToken,
 } from '../src/lib/serverFirebase';
 
 function setCors(res: ServerResponse) {
@@ -93,26 +94,60 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     // 2. Record login attempt (POST)
     if (req.method === 'POST' && (action === 'record-attempt' || url.pathname.includes('/record-attempt') || action === 'record-login')) {
       const body = await parseJsonBody(req);
-      const email = String(body.email || 'Admin').slice(0, 100).trim();
+      const email = String(body.email || 'Admin').toLowerCase().slice(0, 100).trim();
       const status = (['success', 'failed', 'blocked'].includes(body.status) ? body.status : 'failed') as
         | 'success'
         | 'failed'
         | 'blocked';
 
       const logId = String(body.id || `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
-      const reason = String(body.reason || (status === 'failed' ? 'Wrong password' : 'Login event')).slice(0, 250);
 
-      // Sanitize device object, strictly avoid raw passwords or tokens
-      const incomingDevice = body.device || {};
+      // Sanitize errorCode (strictly alphanumeric, slashes, dashes e.g. auth/invalid-credential)
+      let sanitizedErrorCode: string | undefined;
+      if (body.errorCode && typeof body.errorCode === 'string') {
+        const cleaned = body.errorCode.trim().toLowerCase();
+        if (/^auth\/[a-z0-9\-_]{3,40}$/.test(cleaned)) {
+          sanitizedErrorCode = cleaned;
+        } else {
+          sanitizedErrorCode = 'auth/invalid-credential';
+        }
+      }
+
+      // Build readable reason
+      let reason = String(body.reason || '').slice(0, 250);
+      if (!reason) {
+        if (status === 'failed') {
+          reason = sanitizedErrorCode
+            ? `Authentication failed (${sanitizedErrorCode})`
+            : 'Invalid credentials / ভুল পাসওয়ার্ড';
+        } else if (status === 'blocked') {
+          reason = 'Access restricted - blocked device';
+        } else {
+          reason = 'Admin session established';
+        }
+      }
+
+      // Support both body.device and body.deviceInfo
+      const incomingDevice = (body.deviceInfo || body.device || {}) as Record<string, unknown>;
+      const targetDeviceId = String(body.deviceId || incomingDevice.deviceId || `dev_${Date.now()}`).slice(0, 100);
+
+      const rawPlatform = String(incomingDevice.platform || incomingDevice.os || '').slice(0, 60);
+      const rawScreen = String(incomingDevice.screen || incomingDevice.screenResolution || '').slice(0, 30);
+      const rawCanvas = String(incomingDevice.canvasHash || incomingDevice.deviceHash || '').slice(0, 64);
+      const rawUserAgent = String(userAgent || incomingDevice.userAgent || req.headers['user-agent'] || '').slice(0, 300);
+
       const rawDevice: Record<string, unknown> = {
-        deviceId: String(incomingDevice.deviceId || `dev_${Date.now()}`).slice(0, 100),
+        deviceId: targetDeviceId,
         ip: clientIp || incomingDevice.ip || 'Unknown IP',
         browser: String(incomingDevice.browser || 'Browser').slice(0, 60),
         os: String(incomingDevice.os || 'OS').slice(0, 60),
-        deviceType: ['Desktop', 'Mobile', 'Tablet'].includes(incomingDevice.deviceType)
+        platform: rawPlatform || undefined,
+        screen: rawScreen || undefined,
+        canvasHash: rawCanvas || undefined,
+        deviceType: ['Desktop', 'Mobile', 'Tablet'].includes(incomingDevice.deviceType as string)
           ? incomingDevice.deviceType
           : 'Desktop',
-        userAgent: userAgent || incomingDevice.userAgent || '',
+        userAgent: rawUserAgent,
       };
 
       if (incomingDevice.deviceHash) rawDevice.deviceHash = String(incomingDevice.deviceHash).slice(0, 64);
@@ -120,14 +155,29 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       if (incomingDevice.country) rawDevice.country = String(incomingDevice.country).slice(0, 60);
       if (incomingDevice.screenResolution) rawDevice.screenResolution = String(incomingDevice.screenResolution).slice(0, 30);
 
-      const sanitizedLog = {
+      // Construct sanitized log payload without any passwords
+      const sanitizedLog: Record<string, unknown> = {
         id: logId,
         email,
         status,
         reason,
+        deviceId: targetDeviceId,
+        ip: clientIp,
+        userAgent: rawUserAgent,
+        platform: rawPlatform || undefined,
+        screen: rawScreen || undefined,
+        canvasHash: rawCanvas || undefined,
+        errorCode: sanitizedErrorCode || undefined,
         device: rawDevice,
         timestamp: new Date().toISOString(),
       };
+
+      // Guaranteed security check: ensure no password fields can ever exist
+      delete sanitizedLog.password;
+      delete sanitizedLog.plainPassword;
+      delete sanitizedLog.enteredPassword;
+      delete sanitizedLog.wrongPassword;
+      delete sanitizedLog.passwordAttempt;
 
       await serverRecordLoginLog(sanitizedLog);
 
@@ -137,7 +187,21 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       return;
     }
 
-    // 3. Admin: Block a device
+    // 3. Admin Authorization Guard for destructive/admin actions
+    const isAdminAction = ['block', 'unblock', 'unblock-all', 'clear-logs'].includes(action);
+    if (isAdminAction) {
+      const authHeader = req.headers['authorization'] || '';
+      const bearerToken = typeof authHeader === 'string' && authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+      const isAuthorized = await serverVerifyAdminToken(bearerToken);
+      if (!isAuthorized) {
+        res.statusCode = 403;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Unauthorized. Admin credentials required in /admins.' }));
+        return;
+      }
+    }
+
+    // 4. Admin: Block a device
     if (req.method === 'POST' && (action === 'block' || url.pathname.includes('/block'))) {
       const body = await parseJsonBody(req);
       const deviceId = String(body.deviceId || body.id || '').trim();
