@@ -13,6 +13,7 @@ import { AdminLayout, AdminTab } from './admin/AdminLayout';
 import { DashboardOverview } from './admin/DashboardOverview';
 import { ProductManager } from './admin/ProductManager';
 import { ProductFormModal } from './admin/ProductFormModal';
+import { PlatformSelectModal } from './admin/PlatformSelectModal';
 import { BannerManager } from './admin/BannerManager';
 import { BannerFormModal } from './admin/BannerFormModal';
 import { CategoryManager } from './admin/CategoryManager';
@@ -24,7 +25,7 @@ import { AdDisplaySlot } from './components/AdDisplaySlot';
 import { getCurrentDeviceInfo } from './lib/deviceFingerprint';
 import { subscribeToBlockedDevices, subscribeToDeviceBlockStatus, isDeviceBlockedCheck } from './lib/securityService';
 import { subscribeToAds } from './lib/adService';
-import { Product, Banner, DeviceInfo, BlockedDevice, AdsterraAd } from './types';
+import { Product, Banner, DeviceInfo, BlockedDevice, AdsterraAd, AffiliatePlatform } from './types';
 
 const MainAppContent: React.FC = () => {
   const { user } = useAuth();
@@ -113,6 +114,8 @@ const MainAppContent: React.FC = () => {
   }, [currentDevice, user?.isAdmin]);
 
   // Modals for admin creation/editing
+  const [isPlatformSelectModalOpen, setIsPlatformSelectModalOpen] = useState(false);
+  const [selectedPlatform, setSelectedPlatform] = useState<AffiliatePlatform>('amazon');
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
@@ -121,11 +124,20 @@ const MainAppContent: React.FC = () => {
 
   const handleOpenAddProduct = () => {
     setEditingProduct(null);
+    setIsPlatformSelectModalOpen(true);
+  };
+
+  const handleSelectPlatform = (plat: AffiliatePlatform) => {
+    setSelectedPlatform(plat);
+    setIsPlatformSelectModalOpen(false);
     setIsProductModalOpen(true);
   };
 
   const handleOpenEditProduct = (prod: Product) => {
     setEditingProduct(prod);
+    const detectedPlatform: AffiliatePlatform =
+      prod.platform || (prod.aliexpressUrl ? 'aliexpress' : 'amazon');
+    setSelectedPlatform(detectedPlatform);
     setIsProductModalOpen(true);
   };
 
@@ -191,6 +203,12 @@ const MainAppContent: React.FC = () => {
         {adminTab === 'login-details' && <LoginDetailsManager />}
 
         {/* Admin Modals */}
+        <PlatformSelectModal
+          isOpen={isPlatformSelectModalOpen}
+          onClose={() => setIsPlatformSelectModalOpen(false)}
+          onSelectPlatform={handleSelectPlatform}
+        />
+
         <ProductFormModal
           isOpen={isProductModalOpen}
           onClose={() => {
@@ -198,6 +216,7 @@ const MainAppContent: React.FC = () => {
             setEditingProduct(null);
           }}
           productToEdit={editingProduct}
+          initialPlatform={selectedPlatform}
         />
 
         <BannerFormModal

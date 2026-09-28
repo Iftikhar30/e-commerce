@@ -6,6 +6,7 @@ import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import securityHandler from "./api/security";
+import extractAliExpressHandler from "./api/extract-aliexpress-product";
 
 dotenv.config();
 
@@ -501,6 +502,11 @@ Return strictly JSON matching:
       console.error("Extract product error:", err);
       return res.status(500).json({ error: message });
     }
+  });
+
+  // API endpoint to fetch product information automatically from AliExpress URL
+  app.all(["/api/extract-aliexpress-product"], (req, res) => {
+    extractAliExpressHandler(req, res);
   });
 
   // ==========================================

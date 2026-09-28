@@ -132,8 +132,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Handle Product Redirection & Click Tracking
   const onProductClick = (product: Product) => {
-    // If affiliateUrl is specified and non-empty, redirect to it; otherwise fallback to main amazonUrl
-    const targetUrl = product.affiliateUrl?.trim() || product.amazonUrl?.trim();
+    // If affiliateUrl is specified and non-empty, redirect to it; otherwise fallback to main platform URL
+    const targetUrl =
+      product.affiliateUrl?.trim() ||
+      (product.platform === 'aliexpress' ? product.aliexpressUrl?.trim() : product.amazonUrl?.trim()) ||
+      product.amazonUrl?.trim() ||
+      product.aliexpressUrl?.trim();
     if (!targetUrl) return;
 
     // Fire-and-forget atomic click tracking

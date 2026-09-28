@@ -215,13 +215,17 @@ export async function saveProduct(product: Partial<Product> & { id?: string }): 
   const id = product.id || `product_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const now = new Date().toISOString();
 
+  const detectedPlatform = product.platform || (product.aliexpressUrl ? 'aliexpress' : 'amazon');
   const productDoc: Product = {
     id,
     title: product.title || '',
     image: product.image || '',
-    amazonUrl: product.amazonUrl || '',
+    platform: detectedPlatform,
+    ...(product.amazonUrl !== undefined ? { amazonUrl: product.amazonUrl.trim() } : {}),
+    ...(product.aliexpressUrl !== undefined ? { aliexpressUrl: product.aliexpressUrl.trim() } : {}),
     ...(product.affiliateUrl !== undefined ? { affiliateUrl: product.affiliateUrl.trim() } : {}),
     ...(product.asin ? { asin: product.asin } : {}),
+    ...(product.itemId ? { itemId: product.itemId } : {}),
     ...(product.price !== undefined && !isNaN(product.price) ? { price: product.price } : {}),
     ...(product.originalPrice !== undefined && !isNaN(product.originalPrice) ? { originalPrice: product.originalPrice } : {}),
     rating: product.rating ?? 4.5,
@@ -673,6 +677,65 @@ export function cleanAmazonUrl(url: string): string {
   const asin = extractAsinFromAmazonUrl(url);
   if (asin) {
     return `https://www.amazon.com/dp/${asin}`;
+  }
+  return url.trim();
+}
+
+// ----------------------------------------------------
+// ALIEXPRESS URL PARSER HELPER
+// ----------------------------------------------------
+
+export function isAliExpressUrl(url: string): boolean {
+  if (!url) return false;
+  return /aliexpress\.(?:com|ru)|a\.aliexpress\.com|s\.click\.aliexpress\.com|ali\.ski/i.test(url.trim());
+}
+
+export function isAliExpressShortUrl(url: string): boolean {
+  if (!url) return false;
+  return /^(?:https?:\/\/)?(?:a\.aliexpress\.com|s\.click\.aliexpress\.com|ali\.ski|alitems\.site|alitems\.co|star\.aliexpress\.com)\//i.test(
+    url.trim()
+  );
+}
+
+export function extractItemIdFromAliExpressUrl(url: string): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (isAliExpressShortUrl(trimmed)) {
+    return null;
+  }
+  const match =
+    trimmed.match(/(?:\/item\/|[?&]productId=|[?&]itemId=)(\d{11,20})(?:[-_.]|\.html|[/?&#]|$)/i) ||
+    trimmed.match(/\/(\d{11,20})(?:[-_.]|\.html|[/?&#]|$)/i) ||
+    trimmed.match(/(\d{11,20})/i);
+  return match ? match[1] : null;
+}
+
+export function extractTitleFromAliExpressUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const pathname = parsed.pathname;
+    const parts = pathname.split("/").filter(Boolean);
+    for (const part of parts) {
+      if (part.includes(".html")) {
+        const withoutHtml = part.replace(/\.html.*$/i, "");
+        const cleanSlug = withoutHtml.replace(/^\d+[-_]?/, "");
+        if (cleanSlug.length > 5) {
+          return decodeURIComponent(cleanSlug)
+            .replace(/[-_+]/g, " ")
+            .replace(/\b\w/g, (l) => l.toUpperCase());
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return "";
+}
+
+export function cleanAliExpressUrl(url: string): string {
+  const itemId = extractItemIdFromAliExpressUrl(url);
+  if (itemId) {
+    return `https://www.aliexpress.com/item/${itemId}.html`;
   }
   return url.trim();
 }

@@ -41,6 +41,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'hidden' | 'pinned' | 'featured'>('all');
+  const [platformFilter, setPlatformFilter] = useState<'all' | 'amazon' | 'aliexpress'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
   // Delete modal state
@@ -57,6 +58,12 @@ export const ProductManager: React.FC<ProductManagerProps> = ({
     if (statusFilter === 'pinned' && !p.pinned) return false;
     if (statusFilter === 'featured' && !p.featured) return false;
 
+    if (platformFilter !== 'all') {
+      const isAli = p.platform === 'aliexpress' || Boolean(p.aliexpressUrl && !p.amazonUrl);
+      if (platformFilter === 'aliexpress' && !isAli) return false;
+      if (platformFilter === 'amazon' && isAli) return false;
+    }
+
     if (categoryFilter !== 'all' && p.category !== categoryFilter) return false;
 
     if (search.trim()) {
@@ -64,6 +71,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({
       return (
         p.title.toLowerCase().includes(q) ||
         (p.asin && p.asin.toLowerCase().includes(q)) ||
+        (p.itemId && p.itemId.toLowerCase().includes(q)) ||
         p.category.toLowerCase().includes(q)
       );
     }
@@ -165,7 +173,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({
               type="text"
               value={search ?? ''}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by title, ASIN..."
+              placeholder="Search by title, ASIN, Item ID..."
               className="w-full pl-9 pr-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:bg-white focus:border-amber-500"
             />
           </div>
@@ -188,7 +196,7 @@ export const ProductManager: React.FC<ProductManagerProps> = ({
                 key={filter.id}
                 type="button"
                 onClick={() => setStatusFilter(filter.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                   statusFilter === filter.id
                     ? 'bg-neutral-900 text-white shadow-xs'
                     : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
@@ -198,6 +206,39 @@ export const ProductManager: React.FC<ProductManagerProps> = ({
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Platform Quick Filter */}
+        <div className="flex items-center gap-1.5 pt-2 border-t border-neutral-100 flex-wrap text-xs">
+          <span className="text-neutral-500 font-bold mr-1">Platform:</span>
+          {[
+            { id: 'all', label: `All Platforms (${allProducts.length})` },
+            {
+              id: 'aliexpress',
+              label: `AliExpress (${allProducts.filter((p) => p.platform === 'aliexpress' || Boolean(p.aliexpressUrl && !p.amazonUrl)).length})`,
+            },
+            {
+              id: 'amazon',
+              label: `Amazon (${allProducts.filter((p) => p.platform !== 'aliexpress' && !p.aliexpressUrl).length})`,
+            },
+          ].map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setPlatformFilter(item.id as any)}
+              className={`px-2.5 py-1 rounded-lg font-semibold transition-colors cursor-pointer ${
+                platformFilter === item.id
+                  ? item.id === 'aliexpress'
+                    ? 'bg-rose-600 text-white shadow-2xs font-bold'
+                    : item.id === 'amazon'
+                    ? 'bg-amber-400 text-neutral-950 shadow-2xs font-bold'
+                    : 'bg-neutral-900 text-white shadow-2xs'
+                  : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -264,6 +305,17 @@ export const ProductManager: React.FC<ProductManagerProps> = ({
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                        {product.platform === 'aliexpress' || Boolean(product.aliexpressUrl && !product.amazonUrl) ? (
+                          <span className="text-[10px] bg-rose-50 text-rose-700 border border-rose-200 font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                            AliExpress
+                          </span>
+                        ) : (
+                          <span className="text-[10px] bg-amber-50 text-amber-800 border border-amber-200 font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                            Amazon
+                          </span>
+                        )}
                         <h4 className="text-xs sm:text-sm font-bold text-neutral-900 truncate max-w-md">
                           {product.title}
                         </h4>
@@ -303,20 +355,37 @@ export const ProductManager: React.FC<ProductManagerProps> = ({
                             </span>
                           </>
                         )}
-                        {product.asin && (
+                        {product.itemId ? (
+                          <>
+                            <span>•</span>
+                            <span className="font-mono text-neutral-400">Item ID: {product.itemId}</span>
+                          </>
+                        ) : product.asin ? (
                           <>
                             <span>•</span>
                             <span className="font-mono text-neutral-400">ASIN: {product.asin}</span>
                           </>
-                        )}
+                        ) : null}
                         {product.affiliateUrl && (
                           <>
                             <span>•</span>
                             <span
-                              className="text-amber-700 bg-amber-50 border border-amber-200/80 font-medium px-1.5 py-0.5 rounded flex items-center gap-1 text-[10px]"
+                              className={`border font-medium px-1.5 py-0.5 rounded flex items-center gap-1 text-[10px] ${
+                                product.platform === 'aliexpress' || Boolean(product.aliexpressUrl && !product.amazonUrl)
+                                  ? 'text-rose-700 bg-rose-50 border-rose-200/80'
+                                  : 'text-amber-700 bg-amber-50 border-amber-200/80'
+                              }`}
                               title={`Affiliate Redirect: ${product.affiliateUrl}`}
                             >
-                              <LinkIcon size={10} className="text-amber-600" /> Affiliate Link Set
+                              <LinkIcon
+                                size={10}
+                                className={
+                                  product.platform === 'aliexpress' || Boolean(product.aliexpressUrl && !product.amazonUrl)
+                                    ? 'text-rose-600'
+                                    : 'text-amber-600'
+                                }
+                              />{' '}
+                              Affiliate Link Set
                             </span>
                           </>
                         )}

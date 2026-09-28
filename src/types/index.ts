@@ -1,12 +1,17 @@
 export type ProductBadge = 'New' | 'Trending' | 'Best Deal' | 'Featured' | 'Limited Deal' | '';
 
+export type AffiliatePlatform = 'amazon' | 'aliexpress';
+
 export interface Product {
   id: string;
   title: string;
   image: string;
+  platform?: AffiliatePlatform;
   amazonUrl?: string;
+  aliexpressUrl?: string;
   affiliateUrl?: string; // Optional custom affiliate URL for user redirection
   asin?: string;
+  itemId?: string; // AliExpress Item ID
   price?: number;
   originalPrice?: number;
   rating: number;

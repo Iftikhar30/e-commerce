@@ -16,15 +16,30 @@
           "maxLength": 2048,
           "description": "Product main image URL"
         },
+        "platform": {
+          "type": "string",
+          "enum": ["amazon", "aliexpress"],
+          "description": "Affiliate network source platform"
+        },
         "amazonUrl": {
           "type": "string",
           "maxLength": 2048,
           "description": "Direct Amazon affiliate or product URL"
         },
+        "aliexpressUrl": {
+          "type": "string",
+          "maxLength": 2048,
+          "description": "Direct AliExpress affiliate or product URL"
+        },
         "asin": {
           "type": "string",
           "maxLength": 30,
           "description": "Amazon Standard Identification Number (ASIN)"
+        },
+        "itemId": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "AliExpress Item or Product ID"
         },
         "price": {
           "type": "number",
